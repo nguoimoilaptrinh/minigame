@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hội Quán Ma Sói &amp; Gián Điệp (v2.1) — Party Game Offline</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-icon" aria-hidden="true">🌙</span>
+        <div>
+          <p class="brand-title">Hội Quán Party Game <span class="version-badge">v2.1</span></p>
+          <p class="brand-sub">Chơi nhóm 5–10+ người • Tất cả cùng chơi • Không giới hạn giờ</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button type="button" id="btn-sound-settings" class="btn btn-ghost btn-sm" aria-label="Cài đặt âm thanh">
+          <span aria-hidden="true">🔊</span> Giọng &amp; Âm thanh
+        </button>
+        <button type="button" id="btn-rules" class="btn btn-ghost btn-sm">
+          <span aria-hidden="true">📖</span> Luật chơi
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="app-main" class="app-main">
+    <!-- ==================== VIEW: HOME ==================== -->
+    <section id="view-home" class="view-section" aria-labelledby="home-heading">
+      <div class="hero-card">
+        <h1 id="home-heading">Chọn trò chơi cho hội bạn hôm nay</h1>
+        <p class="hero-desc">
+          Mở trên Laptop hoặc điện thoại, quét QR vào phòng là chơi ngay — miễn phí 100% trên GitHub Pages.
+        </p>
+      </div>
+
+      <div class="home-grid">
+        <!-- Game 1 Card -->
+        <article class="game-card game-card-werewolf">
+          <div class="game-card-badge">Game 1 • 5–10+ người</div>
+          <h2>🐺 Ma Sói (Bot Quản Trò)</h2>
+          <p>
+            Đặt Laptop ở giữa bàn làm <strong>Bot Quản Trò tự động</strong>: phát giọng AI Tiếng Việt gọi vai trò, đọc tên người chết và theo dõi phiếu vote trực tiếp.
+          </p>
+          <ul class="feature-list">
+            <li>6 vai trò kèm thẻ bài tranh vẽ riêng: Ma Sói, Tiên Tri, Bảo Vệ, Phù Thủy, Thợ Săn, Dân Làng</li>
+            <li>Thợ Săn hô bắn ở ngoài rồi tự bấm người bị bắn trên điện thoại</li>
+            <li>Vote thoải mái trên điện thoại hoặc giơ tay ngoài đời, không đếm giờ</li>
+          </ul>
+          <button type="button" id="btn-create-werewolf" class="btn btn-primary btn-block">
+            Tạo phòng Ma Sói (Laptop làm Quản Trò)
+          </button>
+        </article>
+
+        <!-- Game 2 Card -->
+        <article class="game-card game-card-spy">
+          <div class="game-card-badge">Game 2 • 4–10+ người</div>
+          <h2>🕵️ Gián Điệp (Tất cả cùng chơi)</h2>
+          <p>
+            Không ai phải đứng ngoài ra đề! Mọi người (kể cả chủ phòng) đều nhận thẻ mật và cùng suy luận qua <strong>3 chế độ chơi cực mặn</strong>.
+          </p>
+          <ul class="feature-list">
+            <li><strong>Ai Là Gián Điệp:</strong> 5 bộ chủ đề (Drama, Ăn nhậu, Trend, Hack não...) + Mr. White</li>
+            <li><strong>Điệp Viên Hỏi Xoáy:</strong> 36 cặp câu hỏi lệch pha cực lầy</li>
+            <li><strong>Spyfall:</strong> 30 địa điểm + 15 câu thẩm vấn gợi ý + bảng gạch loại trừ</li>
+          </ul>
+          <button type="button" id="btn-create-spy" class="btn btn-accent btn-block">
+            Tạo phòng Gián Điệp (Tôi cũng chơi)
+          </button>
+        </article>
+      </div>
+
+      <!-- Join Existing Room -->
+      <section class="join-card" aria-labelledby="join-heading">
+        <h2 id="join-heading">🚪 Đã có mã phòng? Vào ngay</h2>
+        <form id="form-join-room" class="join-form" novalidate>
+          <div class="form-row">
+            <div class="field">
+              <label for="input-join-code">Mã phòng (4 chữ số) <span aria-hidden="true">*</span></label>
+              <input
+                type="text"
+                id="input-join-code"
+                name="roomCode"
+                inputmode="numeric"
+                pattern="\d{4}"
+                maxlength="4"
+                placeholder="Ví dụ: 4829"
+                autocorrect="off"
+                autocapitalize="none"
+                spellcheck="false"
+                enterkeyhint="next"
+                required
+                aria-describedby="join-code-hint"
+              >
+              <span id="join-code-hint" class="hint">4 chữ số hiện trên màn hình người tạo phòng.</span>
+            </div>
+
+            <div class="field">
+              <label for="input-join-name">Tên của bạn <span aria-hidden="true">*</span></label>
+              <input
+                type="text"
+                id="input-join-name"
+                name="playerName"
+                maxlength="20"
+                placeholder="Ví dụ: Minh, Lan, Hùng..."
+                autocomplete="name"
+                enterkeyhint="done"
+                required
+                aria-describedby="join-name-hint"
+              >
+              <span id="join-name-hint" class="hint">Bot Quản Trò sẽ đọc to tên này khi chơi.</span>
+            </div>
+          </div>
+
+          <div class="form-row-inline">
+            <fieldset class="radio-fieldset">
+              <legend>Trò chơi</legend>
+              <div class="radio-group">
+                <label class="radio-pill" for="join-game-werewolf">
+                  <input type="radio" id="join-game-werewolf" name="joinGameType" value="werewolf" checked>
+                  <span>🐺 Ma Sói</span>
+                </label>
+                <label class="radio-pill" for="join-game-spy">
+                  <input type="radio" id="join-game-spy" name="joinGameType" value="spy">
+                  <span>🕵️ Gián Điệp</span>
+                </label>
+              </div>
+            </fieldset>
+            <button type="submit" id="btn-join-submit" class="btn btn-success btn-lg">
+              Vào phòng chơi
+            </button>
+          </div>
+          <p id="join-error-msg" class="form-error" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+    </section>
+
+    <!-- ==================== VIEW: WEREWOLF HOST (LAPTOP) ==================== -->
+    <section id="view-werewolf-host" class="view-section" hidden aria-labelledby="ww-host-title">
+      <div class="room-topbar">
+        <div class="room-code-box">
+          <span class="room-label">MÃ PHÒNG MA SÓI</span>
+          <strong id="ww-host-code" class="room-code-value">----</strong>
+          <span id="ww-host-net-status" class="net-badge" role="status">Đang kết nối...</span>
+        </div>
+        <div class="room-topbar-actions">
+          <button type="button" id="ww-host-copy-link" class="btn btn-secondary">
+            <span aria-hidden="true">🔗</span> Copy link mời
+          </button>
+          <button type="button" id="ww-host-test-voice" class="btn btn-secondary">
+            <span aria-hidden="true">🎙️</span> Thử giọng Bot
+          </button>
+          <button type="button" id="ww-host-leave" class="btn btn-danger-outline">
+            Thoát
+          </button>
+        </div>
+      </div>
+
+      <!-- Host Lobby Panel -->
+      <div id="ww-host-lobby" class="host-layout">
+        <div class="panel share-panel">
+          <h2 id="ww-host-title">Quét QR để vào phòng</h2>
+          <p class="panel-desc">Mở camera quét mã QR, nhập tên và ấn <strong>Sẵn sàng</strong>.</p>
+          <div id="ww-host-qr" class="qr-box" aria-label="Mã QR vào phòng Ma Sói"></div>
+          <p id="ww-host-share-url" class="share-url-text"></p>
+          <div class="demo-tools">
+            <button type="button" id="ww-host-add-demo" class="btn btn-ghost btn-sm">
+              + Thêm người chơi thử nghiệm
+            </button>
+          </div>
+        </div>
+
+        <div class="panel players-panel">
+          <div class="panel-header">
+            <h2>Người chơi (<span id="ww-host-player-count">0</span>)</h2>
+            <span id="ww-host-ready-summary" class="ready-summary">0 sẵn sàng</span>
+          </div>
+          <ul id="ww-host-player-list" class="player-list"></ul>
+          <p id="ww-host-lobby-hint" class="hint-banner">
+            Tối thiểu 5 người chơi và tất cả ấn <strong>Sẵn sàng</strong> để bắt đầu.
+          </p>
+        </div>
+
+        <div class="panel config-panel">
+          <div class="panel-header">
+            <h2>Cấu hình vai trò</h2>
+            <button type="button" id="ww-host-auto-roles" class="btn btn-ghost btn-sm">Gợi ý tự động</button>
+          </div>
+          <div id="ww-host-role-config" class="role-config-grid"></div>
+          <div class="config-footer">
+            <p id="ww-host-role-total" class="role-total-note"></p>
+            <button type="button" id="ww-host-start-btn" class="btn btn-primary btn-lg btn-block" disabled>
+              🌙 Bắt đầu ván Ma Sói
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Host Game Active Panel -->
+      <div id="ww-host-game" class="host-game-layout" hidden>
+        <div class="bot-announcer" aria-live="polite">
+          <div class="bot-avatar" aria-hidden="true">🤖</div>
+          <div class="bot-speech-content">
+            <div class="bot-speech-meta">
+              <span id="ww-host-phase-badge" class="phase-badge">ĐÊM 1</span>
+              <span id="ww-host-alive-count" class="alive-badge">Còn sống: 0/0</span>
+            </div>
+            <p id="ww-host-bot-text" class="bot-speech-text">Bot Quản Trò đang chuẩn bị...</p>
+          </div>
+        </div>
+
+        <div class="host-game-grid">
+          <!-- Left: Phase Control & Live Voting -->
+          <div class="panel phase-panel">
+            <!-- Night progress -->
+            <div id="ww-host-night-box">
+              <h2>🌙 Ban đêm</h2>
+              <p class="panel-desc">Tất cả nhắm mắt. Ai được Bot gọi thì mở mắt thao tác trên điện thoại.</p>
+              <ol id="ww-host-night-steps" class="night-steps-list"></ol>
+              <div class="host-step-controls">
+                <button type="button" id="ww-host-skip-step" class="btn btn-ghost btn-sm">
+                  ⏭️ Bỏ qua bước này
+                </button>
+              </div>
+            </div>
+
+            <!-- Day discussion & Live Vote + Manual Lynch -->
+            <div id="ww-host-day-box" hidden>
+              <h2>☀️ Ban ngày — Thảo luận &amp; Vote treo cổ</h2>
+              <div id="ww-host-night-result-banner" class="result-banner"></div>
+
+              <div id="ww-host-hunter-wait" class="alert-box" hidden>
+                <strong>🏹 Đang chờ Thợ Săn xác nhận phát súng!</strong>
+                <p>Thợ Săn hô bắn ở ngoài rồi tự bấm chọn người bị bắn trên điện thoại của mình (hoặc bấm bỏ qua bên dưới).</p>
+                <button type="button" id="ww-host-skip-hunter" class="btn btn-ghost btn-sm">Không bắn ai (Bỏ qua)</button>
+              </div>
+
+              <!-- Real-time Vote Tracker -->
+              <div class="live-vote-box">
+                <div class="panel-header">
+                  <h3>🗳️ Tình hình Vote trên điện thoại</h3>
+                  <span id="ww-host-vote-progress" class="ready-summary">0/0 đã vote</span>
+                </div>
+                <ul id="ww-host-vote-tally" class="vote-tally-list"></ul>
+                <button type="button" id="ww-host-finalize-vote" class="btn btn-primary btn-block" hidden>
+                  ⚖️ Chốt treo cổ người dẫn đầu phiếu
+                </button>
+              </div>
+
+              <div class="execution-box">
+                <h3>👆 Hoặc ấn trực tiếp người bị treo cổ (Vote miệng)</h3>
+                <div id="ww-host-lynch-grid" class="lynch-grid"></div>
+                <button type="button" id="ww-host-no-lynch" class="btn btn-secondary btn-block">
+                  🤝 Hòa phiếu / Không treo cổ ai — Sang Đêm tiếp theo
+                </button>
+              </div>
+            </div>
+
+            <!-- Game Over Box -->
+            <div id="ww-host-gameover-box" hidden>
+              <div id="ww-host-winner-banner" class="winner-banner"></div>
+              <h3>Bảng tổng kết vai trò</h3>
+              <ul id="ww-host-reveal-list" class="reveal-list"></ul>
+              <div class="gameover-actions">
+                <button type="button" id="ww-host-play-again" class="btn btn-primary btn-lg btn-block">
+                  🔄 Chơi ván mới (Giữ phòng)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Live Status & Public Log -->
+          <div class="panel status-panel">
+            <h2>Dân làng</h2>
+            <ul id="ww-host-board-players" class="board-player-grid"></ul>
+            <h3 class="log-heading">Diễn biến ván chơi</h3>
+            <ul id="ww-host-log-list" class="log-list"></ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW: WEREWOLF PLAYER (MOBILE) ==================== -->
+    <section id="view-werewolf-player" class="view-section mobile-view" hidden aria-labelledby="ww-player-title">
+      <div class="mobile-topbar">
+        <div>
+          <span class="room-label">MA SÓI</span>
+          <strong id="ww-pl-room-code" class="mobile-room-code">----</strong>
+        </div>
+        <span id="ww-pl-net-status" class="net-badge">Đang nối...</span>
+        <button type="button" id="ww-pl-leave" class="btn btn-ghost btn-sm">Thoát</button>
+      </div>
+
+      <!-- Player Lobby -->
+      <div id="ww-pl-lobby" class="panel mobile-panel">
+        <h2 id="ww-player-title">Phòng chờ</h2>
+        <div class="player-identity-box">
+          <span>Bạn là: <strong id="ww-pl-my-name">---</strong></span>
+          <button type="button" id="ww-pl-edit-name" class="btn btn-ghost btn-sm">Đổi tên</button>
+        </div>
+
+        <button type="button" id="ww-pl-ready-btn" class="btn btn-success btn-lg btn-block">
+          ✅ Ấn Sẵn Sàng
+        </button>
+
+        <h3>Trong phòng (<span id="ww-pl-count">0</span>)</h3>
+        <ul id="ww-pl-lobby-list" class="player-list compact"></ul>
+      </div>
+
+      <!-- Player Active Game -->
+      <div id="ww-pl-game" class="mobile-game-wrap" hidden>
+        <div class="mobile-status-strip">
+          <span id="ww-pl-phase-badge" class="phase-badge">ĐÊM 1</span>
+          <span id="ww-pl-alive-badge" class="alive-status-pill">Còn sống</span>
+        </div>
+
+        <!-- Secret Role Card with Generated Art Background -->
+        <div class="secret-card-box">
+          <button type="button" id="ww-pl-toggle-card" class="secret-card" aria-expanded="false">
+            <div id="ww-pl-card-bg" class="card-bg-layer" aria-hidden="true"></div>
+            <div id="ww-pl-card-front" class="card-face card-hidden">
+              <span class="card-icon" aria-hidden="true">🃏</span>
+              <strong>Chạm để xem Vai Trò mật</strong>
+              <span class="card-sub">Che màn hình trước khi mở!</span>
+            </div>
+            <div id="ww-pl-card-back" class="card-face card-revealed" hidden>
+              <span id="ww-pl-role-icon" class="card-icon" aria-hidden="true">🐺</span>
+              <strong id="ww-pl-role-name" class="role-title">Ma Sói</strong>
+              <p id="ww-pl-role-desc" class="role-desc"></p>
+              <p id="ww-pl-role-teammates" class="role-teammates" hidden></p>
+              <span class="card-sub">Chạm lại để úp thẻ xuống</span>
+            </div>
+          </button>
+        </div>
+
+        <!-- Dynamic Action Box (Night actions, Hunter shot, Day Vote) -->
+        <div id="ww-pl-action-area" class="panel mobile-panel"></div>
+
+        <div class="panel mobile-panel">
+          <h3>Trạng thái người chơi</h3>
+          <ul id="ww-pl-board-list" class="player-list compact"></ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VIEW: SPY GAME ROOM (ALL PLAYERS) ==================== -->
+    <section id="view-spy-room" class="view-section" hidden aria-labelledby="spy-title">
+      <div class="room-topbar">
+        <div class="room-code-box">
+          <span class="room-label">MÃ PHÒNG GIÁN ĐIỆP</span>
+          <strong id="spy-room-code" class="room-code-value">----</strong>
+          <span id="spy-net-status" class="net-badge">Đang nối...</span>
+        </div>
+        <div class="room-topbar-actions">
+          <button type="button" id="spy-copy-link" class="btn btn-secondary">
+            <span aria-hidden="true">🔗</span> Copy link mời
+          </button>
+          <button type="button" id="spy-leave" class="btn btn-danger-outline">
+            Thoát
+          </button>
+        </div>
+      </div>
+
+      <!-- Spy Lobby -->
+      <div id="spy-lobby" class="host-layout">
+        <div class="panel share-panel">
+          <h2 id="spy-title">Quét QR vào phòng</h2>
+          <p class="panel-desc">Tất cả mọi người (kể cả chủ phòng) đều nhận bài và cùng chơi!</p>
+          <div id="spy-qr" class="qr-box" aria-label="Mã QR vào phòng Gián Điệp"></div>
+          <p id="spy-share-url" class="share-url-text"></p>
+          <div id="spy-host-demo-wrap" class="demo-tools" hidden>
+            <button type="button" id="spy-add-demo" class="btn btn-ghost btn-sm">
+              + Thêm người chơi thử nghiệm
+            </button>
+          </div>
+        </div>
+
+        <div class="panel players-panel">
+          <div class="panel-header">
+            <h2>Người chơi (<span id="spy-player-count">0</span>)</h2>
+            <span id="spy-ready-summary" class="ready-summary">0 sẵn sàng</span>
+          </div>
+          <div class="player-identity-box">
+            <span>Bạn là: <strong id="spy-my-name">---</strong></span>
+            <button type="button" id="spy-edit-name" class="btn btn-ghost btn-sm">Đổi tên</button>
+          </div>
+          <button type="button" id="spy-ready-btn" class="btn btn-success btn-lg btn-block">
+            ✅ Ấn Sẵn Sàng
+          </button>
+          <ul id="spy-player-list" class="player-list"></ul>
+        </div>
+
+        <!-- Settings Panel -->
+        <div class="panel config-panel">
+          <h2>Cài đặt ván chơi</h2>
+          <form id="spy-config-form" class="spy-config-form">
+            <fieldset class="radio-fieldset">
+              <legend>Chế độ chơi</legend>
+              <div class="radio-stack">
+                <label class="radio-card" for="spy-mode-undercover">
+                  <input type="radio" id="spy-mode-undercover" name="spyMode" value="undercover" checked>
+                  <div>
+                    <strong>Ai Là Gián Điệp (Từ khóa cặp)</strong>
+                    <span>Dân nhận từ A, Gián điệp nhận từ B gần giống (5 bộ chủ đề)</span>
+                  </div>
+                </label>
+                <label class="radio-card" for="spy-mode-twist">
+                  <input type="radio" id="spy-mode-twist" name="spyMode" value="twist">
+                  <div>
+                    <strong>Điệp Viên Hỏi Xoáy (Câu Hỏi Lệch Pha)</strong>
+                    <span>Dân &amp; Gián điệp nhận 2 câu hỏi khác nhau, trả lời xong mới lật đề!</span>
+                  </div>
+                </label>
+                <label class="radio-card" for="spy-mode-spyfall">
+                  <input type="radio" id="spy-mode-spyfall" name="spyMode" value="spyfall">
+                  <div>
+                    <strong>Spyfall (Đoán Địa Điểm)</strong>
+                    <span>Dân biết địa điểm &amp; vai trò; Gián điệp không biết và phải đoán</span>
+                  </div>
+                </label>
+              </div>
+            </fieldset>
+
+            <div id="spy-deck-row" class="config-row">
+              <label for="spy-deck-select">Bộ chủ đề từ khóa:</label>
+              <select id="spy-deck-select" name="deckKey">
+                <option value="all" selected>🎲 Trộn tất cả chủ đề (125+ cặp từ)</option>
+                <option value="drama">🔥 Tình Yêu, Drama &amp; Hội Bạn Thân</option>
+                <option value="food">🍜 Ẩm Thực &amp; Ăn Nhậu Việt Nam</option>
+                <option value="trend">🎬 Showbiz, Phim Ảnh &amp; Trend Mạng</option>
+                <option value="mind">🧠 Hack Não &amp; Tâm Lý (Độ khó cao)</option>
+                <option value="life">🏙️ Đời Sống &amp; Địa Danh Quen Thuộc</option>
+              </select>
+            </div>
+
+            <div class="config-row">
+              <label for="spy-count-select">Số Gián Điệp:</label>
+              <select id="spy-count-select" name="spyCount">
+                <option value="1" selected>1 Gián Điệp</option>
+                <option value="2">2 Gián Điệp (khuyên dùng từ 7 người)</option>
+              </select>
+            </div>
+
+            <div id="spy-mrwhite-row" class="config-checkbox-row">
+              <input type="checkbox" id="spy-mrwhite-check" name="mrWhite">
+              <label for="spy-mrwhite-check">Thêm Mr. White (Thẻ trắng đoán từ khóa)</label>
+            </div>
+          </form>
+
+          <div class="config-footer">
+            <p id="spy-lobby-hint" class="hint-banner">Chờ tất cả mọi người bấm Sẵn sàng...</p>
+            <button type="button" id="spy-start-btn" class="btn btn-accent btn-lg btn-block" hidden disabled>
+              🕵️ Chia bài &amp; Bắt đầu chơi
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Spy Active Game -->
+      <div id="spy-game" class="spy-game-layout" hidden>
+        <div class="spy-game-header">
+          <div class="spy-meta">
+            <span id="spy-mode-badge" class="phase-badge">AI LÀ GIÁN ĐIỆP</span>
+            <span id="spy-round-badge" class="alive-badge">Vòng 1</span>
+            <span id="spy-deck-badge" class="alive-badge">Chủ đề</span>
+          </div>
+          <span id="spy-spark-note" class="spy-no-timer-note">Thảo luận tự do • Vote xong ấn chốt</span>
+        </div>
+
+        <div class="spy-game-grid">
+          <!-- Left: Secret Card & Mode Tools -->
+          <div class="panel">
+            <h2>Thẻ bài bí mật của bạn</h2>
+            <p class="panel-desc">Chạm để xem rồi úp lại ngay kẻo bị nhìn trộm!</p>
+            <button type="button" id="spy-toggle-card" class="secret-card" aria-expanded="false">
+              <div id="spy-card-bg" class="card-bg-layer" aria-hidden="true"></div>
+              <div id="spy-card-front" class="card-face card-hidden">
+                <span class="card-icon" aria-hidden="true">🔐</span>
+                <strong>Chạm để lật Thẻ Mật</strong>
+                <span class="card-sub">Giữ bí mật tuyệt đối</span>
+              </div>
+              <div id="spy-card-back" class="card-face card-revealed" hidden>
+                <span id="spy-card-icon" class="card-icon" aria-hidden="true">📝</span>
+                <strong id="spy-card-title" class="role-title">---</strong>
+                <p id="spy-card-detail" class="role-desc"></p>
+                <p id="spy-card-hint" class="role-hint" hidden></p>
+                <span class="card-sub">Chạm lại để úp thẻ</span>
+              </div>
+            </button>
+
+            <!-- Twist Question Reveal Box -->
+            <div id="spy-twist-tools" class="twist-box" hidden>
+              <div id="spy-twist-revealed-banner" class="alert-box" hidden>
+                <strong>📢 Câu hỏi thật của Dân Thường là:</strong>
+                <p id="spy-twist-real-question"></p>
+              </div>
+              <button type="button" id="spy-twist-reveal-btn" class="btn btn-primary btn-block" hidden>
+                📢 Mọi người trả lời xong -> Lật Câu Hỏi Thật!
+              </button>
+            </div>
+
+            <!-- Spyfall Locations & Sample Questions -->
+            <div id="spy-spyfall-tools" hidden>
+              <div id="spy-guess-location-wrap" hidden>
+                <button type="button" id="spy-open-guess-location" class="btn btn-danger btn-block">
+                  🎯 Tôi là Gián Điệp — Lật bài đoán Địa Điểm!
+                </button>
+              </div>
+              <h3>Bảng địa điểm (Chạm để gạch loại trừ)</h3>
+              <div id="spy-locations-grid" class="locations-chip-grid"></div>
+              <details class="spyfall-questions-box">
+                <summary>💡 Gợi ý câu hỏi thẩm vấn nhanh</summary>
+                <ul id="spy-spyfall-questions-list"></ul>
+              </details>
+            </div>
+
+            <!-- Turn Order for Undercover & Twist -->
+            <div id="spy-order-box" hidden>
+              <h3>Thứ tự phát biểu vòng này</h3>
+              <ol id="spy-order-list" class="order-list"></ol>
+            </div>
+          </div>
+
+          <!-- Right: Live Vote + Host Direct Elimination -->
+          <div class="panel">
+            <div class="panel-header">
+              <h2 id="spy-vote-heading">⚖️ Bầu chọn vạch mặt Gián Điệp</h2>
+              <span id="spy-vote-progress" class="ready-summary">0/0 đã vote</span>
+            </div>
+            <p id="spy-vote-instruction" class="panel-desc">
+              Mọi người bấm <strong>Vote</strong> trên máy mình (hoặc tranh luận xong ngoài đời rồi chủ phòng ấn <strong>Loại</strong>):
+            </p>
+            <ul id="spy-vote-list" class="vote-player-list"></ul>
+
+            <div id="spy-host-controls" class="host-action-stack" hidden>
+              <button type="button" id="spy-finalize-vote" class="btn btn-primary btn-block">
+                ⚖️ Chốt loại người nhiều phiếu nhất
+              </button>
+              <button type="button" id="spy-skip-round" class="btn btn-secondary btn-block">
+                ⏭️ Hòa phiếu / Chưa loại ai — Sang vòng tiếp theo
+              </button>
+            </div>
+
+            <!-- Mr. White Guessing Banner -->
+            <div id="spy-mrwhite-banner" class="alert-box" hidden>
+              <strong>🃏 Mr. White vừa bị loại!</strong>
+              <p>Đang chờ Mr. White nhập từ khóa của Dân thường để lật kèo...</p>
+            </div>
+
+            <!-- Game Over Summary -->
+            <div id="spy-gameover-box" hidden>
+              <div id="spy-winner-banner" class="winner-banner"></div>
+              <div id="spy-answer-reveal" class="answer-reveal-box"></div>
+              <h3>Danh sách vai trò toàn bộ người chơi</h3>
+              <ul id="spy-reveal-list" class="reveal-list"></ul>
+              <button type="button" id="spy-play-again" class="btn btn-accent btn-lg btn-block" hidden>
+                🔄 Chơi ván mới
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <p>Hội Quán Ma Sói &amp; Gián Điệp • Phiên bản <strong>v2.1</strong> • Chạy trực tiếp trên GitHub Pages</p>
+  </footer>
+
+  <!-- ==================== MODALS (<dialog>) ==================== -->
+  <dialog id="dialog-name" aria-labelledby="dialog-name-title">
+    <h2 id="dialog-name-title">Nhập tên của bạn</h2>
+    <form id="form-dialog-name" method="dialog" class="dialog-form">
+      <div class="field">
+        <label for="dialog-name-input">Tên hiển thị (Bot Quản trò sẽ gọi tên này)</label>
+        <input type="text" id="dialog-name-input" name="playerName" maxlength="20" required autofocus>
+      </div>
+      <div class="dialog-actions">
+        <button type="submit" value="confirm" class="btn btn-primary">Xác nhận</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-confirm" aria-labelledby="dialog-confirm-title">
+    <h2 id="dialog-confirm-title">Xác nhận hành động</h2>
+    <p id="dialog-confirm-body" class="dialog-body"></p>
+    <form method="dialog" class="dialog-actions">
+      <button type="submit" value="cancel" class="btn btn-secondary" autofocus>Hủy bỏ</button>
+      <button type="submit" value="confirm" id="dialog-confirm-ok" class="btn btn-danger">Xác nhận</button>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-sound" closedby="any" aria-labelledby="dialog-sound-title">
+    <div class="dialog-header">
+      <h2 id="dialog-sound-title">🔊 Cài đặt giọng đọc &amp; Âm thanh</h2>
+      <button type="button" id="btn-close-sound" class="btn btn-ghost btn-sm" aria-label="Đóng">✕</button>
+    </div>
+    <div class="dialog-body-stack">
+      <div class="config-checkbox-row">
+        <input type="checkbox" id="sound-voice-enable" checked>
+        <label for="sound-voice-enable">Bật giọng đọc Tiếng Việt (Bot Quản Trò)</label>
+      </div>
+      <div class="config-checkbox-row">
+        <input type="checkbox" id="sound-sfx-enable" checked>
+        <label for="sound-sfx-enable">Bật hiệu ứng âm thanh (Sói tru, bình minh, súng...)</label>
+      </div>
+      <div class="field">
+        <label for="sound-tts-mode">Nguồn giọng đọc Tiếng Việt</label>
+        <select id="sound-tts-mode">
+          <option value="cloud" selected>Giọng AI Tự Nhiên (Google Cloud — Khuyên dùng)</option>
+          <option value="browser">Giọng Trình Duyệt (Web Speech Offline)</option>
+        </select>
+      </div>
+      <div id="sound-browser-voice-wrap" class="field" hidden>
+        <label for="sound-voice-select">Giọng đọc trình duyệt</label>
+        <select id="sound-voice-select"></select>
+      </div>
+      <div class="field">
+        <label for="sound-rate-range">Tốc độ đọc: <span id="sound-rate-val">1.05x</span></label>
+        <input type="range" id="sound-rate-range" min="0.75" max="1.35" step="0.05" value="1.05">
+      </div>
+      <div class="dialog-actions">
+        <button type="button" id="btn-test-sfx" class="btn btn-secondary">🐺 Thử tiếng Sói</button>
+        <button type="button" id="btn-test-tts" class="btn btn-primary">🎙️ Đọc thử giọng Bot</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="dialog-rules" closedby="any" aria-labelledby="dialog-rules-title">
+    <div class="dialog-header">
+      <h2 id="dialog-rules-title">📖 Luật chơi nhanh (v2.1)</h2>
+      <button type="button" id="btn-close-rules" class="btn btn-ghost btn-sm" aria-label="Đóng">✕</button>
+    </div>
+    <div class="dialog-body-stack rules-content">
+      <details open>
+        <summary>🐺 Game 1: Ma Sói (Laptop làm Quản Trò)</summary>
+        <ul>
+          <li><strong>Chuẩn bị:</strong> Laptop mở loa đặt giữa bàn. Bạn bè quét QR vào phòng, nhập tên và ấn <strong>Sẵn sàng</strong>.</li>
+          <li><strong>Ban đêm:</strong> Tất cả nhắm mắt. Bot gọi Bảo Vệ → Ma Sói → Tiên Tri → Phù Thủy thao tác kín trên điện thoại.</li>
+          <li><strong>Thợ Săn:</strong> Nếu chết, Thợ Săn hô bắn ở ngoài rồi tự bấm tên người bị bắn trên điện thoại để Bot tiếp tục!</li>
+          <li><strong>Ban ngày:</strong> Tranh luận tự do không giới hạn giờ. Mọi người có thể bấm Vote trực tiếp trên điện thoại để Bot theo dõi, hoặc giơ tay vote ngoài đời rồi bấm chốt trên Laptop.</li>
+        </ul>
+      </details>
+      <details>
+        <summary>🕵️ Game 2: Gián Điệp (Tất cả cùng chơi)</summary>
+        <ul>
+          <li><strong>Ai Là Gián Điệp:</strong> Dân nhận Từ khóa A, Gián Điệp nhận Từ khóa B gần giống. Có 5 bộ chủ đề (Drama, Ăn nhậu, Trend, Hack não, Đời sống) + Mr. White.</li>
+          <li><strong>Điệp Viên Hỏi Xoáy:</strong> Dân &amp; Gián Điệp nhận 2 câu hỏi lệch pha. Cả bàn trả lời thành tiếng trước rồi mới lật câu hỏi thật ra cười nghiêng ngả và Vote!</li>
+          <li><strong>Spyfall:</strong> Dân biết Địa điểm + Vai trò; Gián Điệp không biết và phải nghe lén để đoán đúng Địa điểm.</li>
+        </ul>
+      </details>
+    </div>
+    <form method="dialog" class="dialog-actions">
+      <button type="submit" value="close" class="btn btn-primary">Đã hiểu</button>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-guess" aria-labelledby="dialog-guess-title">
+    <h2 id="dialog-guess-title">🎯 Nhập dự đoán của bạn</h2>
+    <form id="form-dialog-guess" method="dialog" class="dialog-form">
+      <p id="dialog-guess-desc" class="dialog-body"></p>
+      <div id="dialog-guess-text-wrap" class="field">
+        <label for="dialog-guess-input">Từ khóa dự đoán</label>
+        <input type="text" id="dialog-guess-input" name="guessText" autocomplete="off">
+      </div>
+      <div id="dialog-guess-select-wrap" class="field" hidden>
+        <label for="dialog-guess-select">Chọn Địa điểm bạn đoán</label>
+        <select id="dialog-guess-select" name="guessLocation"></select>
+      </div>
+      <div class="dialog-actions">
+        <button type="button" id="dialog-guess-cancel" class="btn btn-secondary">Hủy</button>
+        <button type="submit" value="confirm" class="btn btn-danger">Chốt dự đoán!</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Toast Popover Notification -->
+  <div id="toast-message" class="toast" popover="manual" role="status" aria-live="polite"></div>
+
+  <!-- External lightweight libraries with graceful fallback -->
+  <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js" defer></script>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js" defer></script>
+  <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js" defer></script>
+
+  <!-- App Scripts -->
+  <script src="js/data.js" defer></script>
+  <script src="js/audio.js" defer></script>
+  <script src="js/network.js" defer></script>
+  <script src="js/werewolf.js" defer></script>
+  <script src="js/spy.js" defer></script>
+  <script src="js/app.js" defer></script>
+</body>
+</html>
