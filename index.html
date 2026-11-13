@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hội Quán Ma Sói &amp; Gián Điệp (v2.1) — Party Game Offline</title>
+  <title>Hội Quán Ma Sói &amp; Gián Điệp (v2.2) — Party Game Offline</title>
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -12,7 +12,7 @@
       <div class="brand">
         <span class="brand-icon" aria-hidden="true">🌙</span>
         <div>
-          <p class="brand-title">Hội Quán Party Game <span class="version-badge">v2.1</span></p>
+          <p class="brand-title">Hội Quán Party Game <span class="version-badge">v2.2</span></p>
           <p class="brand-sub">Chơi nhóm 5–10+ người • Tất cả cùng chơi • Không giới hạn giờ</p>
         </div>
       </div>
@@ -115,6 +115,11 @@
             </div>
           </div>
 
+          <div class="field">
+            <span class="field-label-text">Chọn Avatar đại diện</span>
+            <div id="join-avatar-picker" class="avatar-picker-wrap"></div>
+          </div>
+
           <div class="form-row-inline">
             <fieldset class="radio-fieldset">
               <legend>Trò chơi</legend>
@@ -199,22 +204,38 @@
         </div>
       </div>
 
-      <!-- Host Game Active Panel -->
+      <!-- Host Game Active Panel (Clean Stage View) -->
       <div id="ww-host-game" class="host-game-layout" hidden>
-        <div class="bot-announcer" aria-live="polite">
+        <div class="ingame-corner-bar">
+          <div class="ingame-meta">
+            <span id="ww-host-phase-badge" class="phase-badge">ĐÊM 1</span>
+            <span id="ww-host-alive-count" class="alive-badge">Còn sống: 0/0</span>
+          </div>
+          <div class="ingame-actions">
+            <button type="button" id="ww-ingame-sound" class="btn btn-ghost btn-sm" aria-label="Âm thanh Bot">
+              <span aria-hidden="true">🔊</span>
+            </button>
+            <button type="button" id="ww-ingame-leave" class="btn btn-danger-outline btn-sm">
+              Thoát phòng
+            </button>
+          </div>
+        </div>
+
+        <div id="ww-bot-announcer" class="bot-announcer" aria-live="polite">
           <div class="bot-avatar" aria-hidden="true">🤖</div>
           <div class="bot-speech-content">
             <div class="bot-speech-meta">
-              <span id="ww-host-phase-badge" class="phase-badge">ĐÊM 1</span>
-              <span id="ww-host-alive-count" class="alive-badge">Còn sống: 0/0</span>
+              <span class="bot-label">BOT QUẢN TRÒ</span>
+              <span class="bot-wave" aria-hidden="true">
+                <span></span><span></span><span></span><span></span><span></span>
+              </span>
             </div>
             <p id="ww-host-bot-text" class="bot-speech-text">Bot Quản Trò đang chuẩn bị...</p>
           </div>
         </div>
 
-        <div class="host-game-grid">
-          <!-- Left: Phase Control & Live Voting -->
-          <div class="panel phase-panel">
+        <div class="host-stage-wrap">
+          <div class="panel phase-panel host-stage-panel">
             <!-- Night progress -->
             <div id="ww-host-night-box">
               <h2>🌙 Ban đêm</h2>
@@ -241,7 +262,7 @@
               <!-- Real-time Vote Tracker -->
               <div class="live-vote-box">
                 <div class="panel-header">
-                  <h3>🗳️ Tình hình Vote trên điện thoại</h3>
+                  <h3>🗳️ Tình hình Vote trực tiếp</h3>
                   <span id="ww-host-vote-progress" class="ready-summary">0/0 đã vote</span>
                 </div>
                 <ul id="ww-host-vote-tally" class="vote-tally-list"></ul>
@@ -271,14 +292,6 @@
               </div>
             </div>
           </div>
-
-          <!-- Right: Live Status & Public Log -->
-          <div class="panel status-panel">
-            <h2>Dân làng</h2>
-            <ul id="ww-host-board-players" class="board-player-grid"></ul>
-            <h3 class="log-heading">Diễn biến ván chơi</h3>
-            <ul id="ww-host-log-list" class="log-list"></ul>
-          </div>
         </div>
       </div>
     </section>
@@ -298,8 +311,11 @@
       <div id="ww-pl-lobby" class="panel mobile-panel">
         <h2 id="ww-player-title">Phòng chờ</h2>
         <div class="player-identity-box">
-          <span>Bạn là: <strong id="ww-pl-my-name">---</strong></span>
-          <button type="button" id="ww-pl-edit-name" class="btn btn-ghost btn-sm">Đổi tên</button>
+          <span class="player-identity-left">
+            <span id="ww-pl-my-avatar" class="avatar-slot" aria-hidden="true"></span>
+            <span>Bạn là: <strong id="ww-pl-my-name">---</strong></span>
+          </span>
+          <button type="button" id="ww-pl-edit-name" class="btn btn-ghost btn-sm">Đổi tên / Avatar</button>
         </div>
 
         <button type="button" id="ww-pl-ready-btn" class="btn btn-success btn-lg btn-block">
@@ -310,39 +326,41 @@
         <ul id="ww-pl-lobby-list" class="player-list compact"></ul>
       </div>
 
-      <!-- Player Active Game -->
+      <!-- Player Active Game (Minimalist Offline Phone View) -->
       <div id="ww-pl-game" class="mobile-game-wrap" hidden>
         <div class="mobile-status-strip">
-          <span id="ww-pl-phase-badge" class="phase-badge">ĐÊM 1</span>
-          <span id="ww-pl-alive-badge" class="alive-status-pill">Còn sống</span>
+          <div class="mobile-status-badges">
+            <span id="ww-pl-phase-badge" class="phase-badge">ĐÊM 1</span>
+            <span id="ww-pl-alive-badge" class="alive-status-pill">Còn sống</span>
+          </div>
+          <button type="button" id="ww-pl-ingame-leave" class="btn btn-ghost btn-sm">Thoát</button>
         </div>
 
-        <!-- Secret Role Card with Generated Art Background -->
+        <!-- 3D Flip Secret Role Card with Generated Art Background -->
         <div class="secret-card-box">
-          <button type="button" id="ww-pl-toggle-card" class="secret-card" aria-expanded="false">
-            <div id="ww-pl-card-bg" class="card-bg-layer" aria-hidden="true"></div>
-            <div id="ww-pl-card-front" class="card-face card-hidden">
-              <span class="card-icon" aria-hidden="true">🃏</span>
-              <strong>Chạm để xem Vai Trò mật</strong>
-              <span class="card-sub">Che màn hình trước khi mở!</span>
-            </div>
-            <div id="ww-pl-card-back" class="card-face card-revealed" hidden>
-              <span id="ww-pl-role-icon" class="card-icon" aria-hidden="true">🐺</span>
-              <strong id="ww-pl-role-name" class="role-title">Ma Sói</strong>
-              <p id="ww-pl-role-desc" class="role-desc"></p>
-              <p id="ww-pl-role-teammates" class="role-teammates" hidden></p>
-              <span class="card-sub">Chạm lại để úp thẻ xuống</span>
-            </div>
+          <button type="button" id="ww-pl-toggle-card" class="secret-card secret-card-3d" aria-expanded="false">
+            <span class="secret-card-inner">
+              <span id="ww-pl-card-front" class="card-face card-hidden card-front-3d">
+                <span class="card-icon" aria-hidden="true">🃏</span>
+                <strong>Chạm để lật Vai Trò mật</strong>
+                <span class="card-sub">Che màn hình trước khi mở!</span>
+              </span>
+              <span id="ww-pl-card-back" class="card-face card-revealed card-back-3d">
+                <span id="ww-pl-card-bg" class="card-bg-layer" aria-hidden="true"></span>
+                <span class="card-content-z">
+                  <span id="ww-pl-role-icon" class="card-icon" aria-hidden="true">🐺</span>
+                  <strong id="ww-pl-role-name" class="role-title">Ma Sói</strong>
+                  <span id="ww-pl-role-desc" class="role-desc"></span>
+                  <span id="ww-pl-role-teammates" class="role-teammates" hidden></span>
+                  <span class="card-sub">Chạm lại để úp thẻ xuống</span>
+                </span>
+              </span>
+            </span>
           </button>
         </div>
 
         <!-- Dynamic Action Box (Night actions, Hunter shot, Day Vote) -->
         <div id="ww-pl-action-area" class="panel mobile-panel"></div>
-
-        <div class="panel mobile-panel">
-          <h3>Trạng thái người chơi</h3>
-          <ul id="ww-pl-board-list" class="player-list compact"></ul>
-        </div>
       </div>
     </section>
 
@@ -384,8 +402,11 @@
             <span id="spy-ready-summary" class="ready-summary">0 sẵn sàng</span>
           </div>
           <div class="player-identity-box">
-            <span>Bạn là: <strong id="spy-my-name">---</strong></span>
-            <button type="button" id="spy-edit-name" class="btn btn-ghost btn-sm">Đổi tên</button>
+            <span class="player-identity-left">
+              <span id="spy-my-avatar" class="avatar-slot" aria-hidden="true"></span>
+              <span>Bạn là: <strong id="spy-my-name">---</strong></span>
+            </span>
+            <button type="button" id="spy-edit-name" class="btn btn-ghost btn-sm">Đổi tên / Avatar</button>
           </div>
           <button type="button" id="spy-ready-btn" class="btn btn-success btn-lg btn-block">
             ✅ Ấn Sẵn Sàng
@@ -461,34 +482,41 @@
 
       <!-- Spy Active Game -->
       <div id="spy-game" class="spy-game-layout" hidden>
-        <div class="spy-game-header">
+        <div class="ingame-corner-bar">
           <div class="spy-meta">
             <span id="spy-mode-badge" class="phase-badge">AI LÀ GIÁN ĐIỆP</span>
             <span id="spy-round-badge" class="alive-badge">Vòng 1</span>
             <span id="spy-deck-badge" class="alive-badge">Chủ đề</span>
           </div>
-          <span id="spy-spark-note" class="spy-no-timer-note">Thảo luận tự do • Vote xong ấn chốt</span>
+          <div class="ingame-actions">
+            <span id="spy-spark-note" class="spy-no-timer-note">Thảo luận tự do</span>
+            <button type="button" id="spy-ingame-leave" class="btn btn-ghost btn-sm">Thoát</button>
+          </div>
         </div>
 
         <div class="spy-game-grid">
-          <!-- Left: Secret Card & Mode Tools -->
+          <!-- Left: 3D Flip Secret Card & Mode Tools -->
           <div class="panel">
             <h2>Thẻ bài bí mật của bạn</h2>
             <p class="panel-desc">Chạm để xem rồi úp lại ngay kẻo bị nhìn trộm!</p>
-            <button type="button" id="spy-toggle-card" class="secret-card" aria-expanded="false">
-              <div id="spy-card-bg" class="card-bg-layer" aria-hidden="true"></div>
-              <div id="spy-card-front" class="card-face card-hidden">
-                <span class="card-icon" aria-hidden="true">🔐</span>
-                <strong>Chạm để lật Thẻ Mật</strong>
-                <span class="card-sub">Giữ bí mật tuyệt đối</span>
-              </div>
-              <div id="spy-card-back" class="card-face card-revealed" hidden>
-                <span id="spy-card-icon" class="card-icon" aria-hidden="true">📝</span>
-                <strong id="spy-card-title" class="role-title">---</strong>
-                <p id="spy-card-detail" class="role-desc"></p>
-                <p id="spy-card-hint" class="role-hint" hidden></p>
-                <span class="card-sub">Chạm lại để úp thẻ</span>
-              </div>
+            <button type="button" id="spy-toggle-card" class="secret-card secret-card-3d" aria-expanded="false">
+              <span class="secret-card-inner">
+                <span id="spy-card-front" class="card-face card-hidden card-front-3d">
+                  <span class="card-icon" aria-hidden="true">🔐</span>
+                  <strong>Chạm để lật Thẻ Mật</strong>
+                  <span class="card-sub">Giữ bí mật tuyệt đối</span>
+                </span>
+                <span id="spy-card-back" class="card-face card-revealed card-back-3d">
+                  <span id="spy-card-bg" class="card-bg-layer" aria-hidden="true"></span>
+                  <span class="card-content-z">
+                    <span id="spy-card-icon" class="card-icon" aria-hidden="true">📝</span>
+                    <strong id="spy-card-title" class="role-title">---</strong>
+                    <span id="spy-card-detail" class="role-desc"></span>
+                    <span id="spy-card-hint" class="role-hint" hidden></span>
+                    <span class="card-sub">Chạm lại để úp thẻ</span>
+                  </span>
+                </span>
+              </span>
             </button>
 
             <!-- Twist Question Reveal Box -->
@@ -567,16 +595,20 @@
   </main>
 
   <footer class="app-footer">
-    <p>Hội Quán Ma Sói &amp; Gián Điệp • Phiên bản <strong>v2.1</strong> • Chạy trực tiếp trên GitHub Pages</p>
+    <p>Hội Quán Ma Sói &amp; Gián Điệp • Phiên bản <strong>v2.2</strong> • Chạy trực tiếp trên GitHub Pages</p>
   </footer>
 
   <!-- ==================== MODALS (<dialog>) ==================== -->
   <dialog id="dialog-name" aria-labelledby="dialog-name-title">
-    <h2 id="dialog-name-title">Nhập tên của bạn</h2>
+    <h2 id="dialog-name-title">Thông tin người chơi</h2>
     <form id="form-dialog-name" method="dialog" class="dialog-form">
       <div class="field">
         <label for="dialog-name-input">Tên hiển thị (Bot Quản trò sẽ gọi tên này)</label>
         <input type="text" id="dialog-name-input" name="playerName" maxlength="20" required autofocus>
+      </div>
+      <div class="field">
+        <span class="field-label-text">Chọn Avatar đại diện</span>
+        <div id="dialog-avatar-picker" class="avatar-picker-wrap"></div>
       </div>
       <div class="dialog-actions">
         <button type="submit" value="confirm" class="btn btn-primary">Xác nhận</button>
@@ -631,7 +663,7 @@
 
   <dialog id="dialog-rules" closedby="any" aria-labelledby="dialog-rules-title">
     <div class="dialog-header">
-      <h2 id="dialog-rules-title">📖 Luật chơi nhanh (v2.1)</h2>
+      <h2 id="dialog-rules-title">📖 Luật chơi nhanh (v2.2)</h2>
       <button type="button" id="btn-close-rules" class="btn btn-ghost btn-sm" aria-label="Đóng">✕</button>
     </div>
     <div class="dialog-body-stack rules-content">

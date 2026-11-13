@@ -1,7 +1,71 @@
-// Điều phối giao diện chính, Dialogs chuẩn HTML5, QR Code và URL Deep-link
+// Điều phối giao diện chính v2.2: Minimalist Active Mode, Avatar Picker, Dialogs chuẩn HTML5, QR Code & Deep-link
 window.AppUI = (() => {
   const VIEW_IDS = ['view-home', 'view-werewolf-host', 'view-werewolf-player', 'view-spy-room'];
   let toastTimer = null;
+
+  function setActiveGameMode(isActive, phaseMode = null) {
+    document.body.classList.toggle('in-active-game', Boolean(isActive));
+    document.body.classList.toggle('phase-night', Boolean(isActive && phaseMode === 'NIGHT'));
+    document.body.classList.toggle('phase-day', Boolean(isActive && phaseMode === 'DAY'));
+  }
+
+  function getSavedAvatarId() {
+    const saved = localStorage.getItem('hq_player_avatar');
+    if (saved && window.GameData?.PLAYER_AVATARS?.some((a) => a.id === saved)) {
+      return saved;
+    }
+    const randId = window.GameData?.getRandomAvatarId ? window.GameData.getRandomAvatarId() : 'boy_smile';
+    localStorage.setItem('hq_player_avatar', randId);
+    return randId;
+  }
+
+  function saveAvatarId(id) {
+    if (id) localStorage.setItem('hq_player_avatar', id);
+  }
+
+  function createAvatarEl(avatarId, sizeClass = 'avatar-md') {
+    const av = window.GameData?.getAvatarById
+      ? window.GameData.getAvatarById(avatarId)
+      : { emoji: '🙂', label: 'Người chơi', bg: 'linear-gradient(135deg,#6366f1,#06b6d4)' };
+    const span = document.createElement('span');
+    span.className = `avatar-badge ${sizeClass}`;
+    span.style.background = av.bg;
+    span.setAttribute('aria-hidden', 'true');
+    span.textContent = av.emoji;
+    return span;
+  }
+
+  function renderAvatarPicker(container, selectedId, onSelect) {
+    if (!container) return;
+    const list = window.GameData?.PLAYER_AVATARS || [];
+    let current = selectedId || getSavedAvatarId();
+    container.innerHTML = '';
+
+    const grid = document.createElement('div');
+    grid.className = 'avatar-picker-grid';
+    grid.setAttribute('role', 'group');
+    grid.setAttribute('aria-label', 'Danh sách icon mặt người đại diện');
+
+    list.forEach((av) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'avatar-option';
+      btn.style.background = av.bg;
+      btn.textContent = av.emoji;
+      btn.title = av.label;
+      btn.setAttribute('aria-label', av.label);
+      btn.setAttribute('aria-pressed', av.id === current ? 'true' : 'false');
+      btn.addEventListener('click', () => {
+        current = av.id;
+        grid.querySelectorAll('.avatar-option').forEach((b) => b.setAttribute('aria-pressed', 'false'));
+        btn.setAttribute('aria-pressed', 'true');
+        if (typeof onSelect === 'function') onSelect(av.id);
+      });
+      grid.appendChild(btn);
+    });
+
+    container.appendChild(grid);
+  }
 
   function showView(viewId) {
     VIEW_IDS.forEach((id) => {
@@ -12,6 +76,7 @@ window.AppUI = (() => {
   }
 
   function goHome() {
+    setActiveGameMode(false, null);
     // Xóa query params trên URL nhưng không reload trang
     const url = new URL(window.location.href);
     url.search = '';
@@ -90,19 +155,25 @@ window.AppUI = (() => {
     });
   }
 
-  function promptNameDialog(initialName = '') {
+  function promptProfileDialog(initialName = '', initialAvatarId = '') {
     return new Promise((resolve) => {
       const dialog = document.getElementById('dialog-name');
       const input = document.getElementById('dialog-name-input');
       const form = document.getElementById('form-dialog-name');
+      const pickerWrap = document.getElementById('dialog-avatar-picker');
       input.value = initialName;
+      let chosenAvatar = initialAvatarId || getSavedAvatarId();
+
+      renderAvatarPicker(pickerWrap, chosenAvatar, (id) => {
+        chosenAvatar = id;
+      });
 
       const onClose = () => {
         const confirmed = dialog.returnValue === 'confirm';
         const val = input.value.trim();
         dialog.returnValue = '';
         dialog.removeEventListener('close', onClose);
-        resolve(confirmed && val ? val : null);
+        resolve(confirmed && val ? { name: val, avatarId: chosenAvatar } : null);
       };
 
       form.onsubmit = (e) => {
@@ -115,6 +186,10 @@ window.AppUI = (() => {
       dialog.addEventListener('close', onClose);
       dialog.showModal();
     });
+  }
+
+  function promptNameDialog(initialName = '') {
+    return promptProfileDialog(initialName).then((res) => (res ? res.name : null));
   }
 
   // Fallback light-dismiss cho trình duyệt chưa hỗ trợ closedby="any"
@@ -133,6 +208,12 @@ window.AppUI = (() => {
         if (pressedOutside && outside(e, dialog)) dialog.close();
       });
     }
+  }
+
+  let openSoundModalFn = () => {};
+
+  function openSoundSettings() {
+    openSoundModalFn();
   }
 
   function setupDialogs() {
@@ -175,13 +256,19 @@ window.AppUI = (() => {
     }
 
     document.addEventListener('audio-voices-updated', populateVoices);
+    document.addEventListener('audio-speak-state', (e) => {
+      const botBox = document.getElementById('ww-bot-announcer');
+      if (botBox) botBox.classList.toggle('is-speaking', Boolean(e.detail?.speaking));
+    });
 
-    document.getElementById('btn-sound-settings').addEventListener('click', () => {
+    openSoundModalFn = () => {
       window.AudioEngine.unlock();
       populateVoices();
       browserVoiceWrap.hidden = ttsModeSel.value !== 'browser';
       soundDialog.showModal();
-    });
+    };
+
+    document.getElementById('btn-sound-settings').addEventListener('click', openSoundModalFn);
 
     document.getElementById('btn-close-sound').addEventListener('click', () => {
       soundDialog.returnValue = '';
@@ -235,11 +322,18 @@ window.AppUI = (() => {
     const joinForm = document.getElementById('form-join-room');
     const codeInput = document.getElementById('input-join-code');
     const nameInput = document.getElementById('input-join-name');
+    const avatarPickerWrap = document.getElementById('join-avatar-picker');
     const errEl = document.getElementById('join-error-msg');
 
-    // Khôi phục tên đã dùng gần nhất (nếu có)
+    // Khôi phục tên & avatar đã dùng gần nhất (nếu có)
     const savedName = localStorage.getItem('hq_player_name') || '';
     if (savedName) nameInput.value = savedName;
+    let selectedAvatarId = getSavedAvatarId();
+
+    renderAvatarPicker(avatarPickerWrap, selectedAvatarId, (id) => {
+      selectedAvatarId = id;
+      saveAvatarId(id);
+    });
 
     createWwBtn.addEventListener('click', () => {
       window.AudioEngine.unlock();
@@ -249,11 +343,13 @@ window.AppUI = (() => {
 
     createSpyBtn.addEventListener('click', async () => {
       window.AudioEngine.unlock();
-      const hostName = await promptNameDialog(savedName || 'Chủ phòng');
-      if (!hostName) return;
-      localStorage.setItem('hq_player_name', hostName);
+      const profile = await promptProfileDialog(savedName || 'Chủ phòng', selectedAvatarId);
+      if (!profile) return;
+      localStorage.setItem('hq_player_name', profile.name);
+      selectedAvatarId = profile.avatarId;
+      saveAvatarId(profile.avatarId);
       const code = window.RoomNetwork.generateRoomCode();
-      window.SpyGame.startHost(code, hostName);
+      window.SpyGame.startHost(code, profile.name, profile.avatarId);
     });
 
     // Clear lỗi khi đang nhập
@@ -298,11 +394,12 @@ window.AppUI = (() => {
       }
       nameInput.removeAttribute('aria-invalid');
       localStorage.setItem('hq_player_name', playerName);
+      saveAvatarId(selectedAvatarId);
 
       if (gameType === 'werewolf') {
-        window.WerewolfGame.joinAsPlayer(code, playerName);
+        window.WerewolfGame.joinAsPlayer(code, playerName, selectedAvatarId);
       } else {
-        window.SpyGame.joinAsPlayer(code, playerName);
+        window.SpyGame.joinAsPlayer(code, playerName, selectedAvatarId);
       }
     });
 
@@ -333,10 +430,17 @@ window.AppUI = (() => {
   return {
     showView,
     goHome,
+    setActiveGameMode,
+    getSavedAvatarId,
+    saveAvatarId,
+    createAvatarEl,
+    renderAvatarPicker,
+    openSoundSettings,
     showToast,
     copyText,
     renderQrCode,
     confirmDialog,
-    promptNameDialog
+    promptNameDialog,
+    promptProfileDialog
   };
 })();

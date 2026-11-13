@@ -1,6 +1,44 @@
-// Dữ liệu v2.1: Vai trò Ma Sói, 5 Bộ chủ đề Ai Là Gián Điệp (125+ cặp từ), 36+ Câu hỏi Lệch Pha & 30 Địa điểm Spyfall
+// Dữ liệu v2.2: Avatar người chơi, Vai trò Ma Sói, 5 Bộ chủ đề Ai Là Gián Điệp (125+ cặp từ), 36+ Câu hỏi Lệch Pha & 30 Địa điểm Spyfall
 window.GameData = (() => {
-  const APP_VERSION = 'v2.1';
+  const APP_VERSION = 'v2.2';
+
+  const PLAYER_AVATARS = [
+    { id: 'boy_smile', emoji: '👦', label: 'Nam vui vẻ', bg: 'linear-gradient(135deg,#38bdf8,#6366f1)' },
+    { id: 'girl_smile', emoji: '👧', label: 'Nữ đáng yêu', bg: 'linear-gradient(135deg,#f472b6,#e11d48)' },
+    { id: 'man_cool', emoji: '👨', label: 'Anh trai', bg: 'linear-gradient(135deg,#3b82f6,#1d4ed8)' },
+    { id: 'woman_chic', emoji: '👩', label: 'Chị đẹp', bg: 'linear-gradient(135deg,#ec4899,#a855f7)' },
+    { id: 'man_beard', emoji: '🧔', label: 'Râu ngầu', bg: 'linear-gradient(135deg,#f59e0b,#b45309)' },
+    { id: 'blond_boy', emoji: '👱‍♂️', label: 'Tóc vàng', bg: 'linear-gradient(135deg,#fbbf24,#f97316)' },
+    { id: 'blond_girl', emoji: '👱‍♀️', label: 'Cô gái vàng', bg: 'linear-gradient(135deg,#fcd34d,#ec4899)' },
+    { id: 'curly_hair', emoji: '🧑‍🦱', label: 'Tóc xoăn', bg: 'linear-gradient(135deg,#8b5cf6,#6366f1)' },
+    { id: 'red_hair', emoji: '🧑‍🦰', label: 'Tóc đỏ', bg: 'linear-gradient(135deg,#ef4444,#f97316)' },
+    { id: 'white_hair', emoji: '🧑‍🦳', label: 'Bạch kim', bg: 'linear-gradient(135deg,#94a3b8,#475569)' },
+    { id: 'grandpa', emoji: '👴', label: 'Bô lão', bg: 'linear-gradient(135deg,#10b981,#0f766e)' },
+    { id: 'grandma', emoji: '👵', label: 'Bà ngoại', bg: 'linear-gradient(135deg,#14b8a6,#0369a1)' },
+    { id: 'glasses_nerd', emoji: '🤓', label: 'Mọt sách', bg: 'linear-gradient(135deg,#0ea5e9,#2563eb)' },
+    { id: 'sunglasses', emoji: '😎', label: 'Kính râm', bg: 'linear-gradient(135deg,#6366f1,#0f172a)' },
+    { id: 'monocle', emoji: '🧐', label: 'Thám tử', bg: 'linear-gradient(135deg,#d97706,#78350f)' },
+    { id: 'smirk', emoji: '😏', label: 'Bí ẩn', bg: 'linear-gradient(135deg,#9333ea,#4c1d95)' },
+    { id: 'star_eyes', emoji: '🤩', label: 'Hào hứng', bg: 'linear-gradient(135deg,#f43f5e,#f59e0b)' },
+    { id: 'party_face', emoji: '🥳', label: 'Tiệc tùng', bg: 'linear-gradient(135deg,#22c55e,#06b6d4)' },
+    { id: 'cowboy', emoji: '🤠', label: 'Cao bồi', bg: 'linear-gradient(135deg,#ea580c,#9a3412)' },
+    { id: 'clown', emoji: '🤡', label: 'Hề hước', bg: 'linear-gradient(135deg,#ef4444,#ec4899)' },
+    { id: 'prince', emoji: '🤴', label: 'Hoàng tử', bg: 'linear-gradient(135deg,#eab308,#7c3aed)' },
+    { id: 'princess', emoji: '👸', label: 'Công chúa', bg: 'linear-gradient(135deg,#f472b6,#c026d3)' },
+    { id: 'detective', emoji: '🕵️', label: 'Đặc vụ', bg: 'linear-gradient(135deg,#334155,#0f172a)' },
+    { id: 'ninja', emoji: '🥷', label: 'Ẩn thân', bg: 'linear-gradient(135deg,#1e293b,#7c2d12)' }
+  ];
+
+  function getAvatarById(id) {
+    return PLAYER_AVATARS.find((a) => a.id === id) || PLAYER_AVATARS[0];
+  }
+
+  function getRandomAvatarId(seedIndex) {
+    if (typeof seedIndex === 'number' && seedIndex >= 0) {
+      return PLAYER_AVATARS[seedIndex % PLAYER_AVATARS.length].id;
+    }
+    return PLAYER_AVATARS[Math.floor(Math.random() * PLAYER_AVATARS.length)].id;
+  }
 
   const WEREWOLF_ROLES = {
     werewolf: {
@@ -357,6 +395,9 @@ window.GameData = (() => {
 
   return {
     APP_VERSION,
+    PLAYER_AVATARS,
+    getAvatarById,
+    getRandomAvatarId,
     WEREWOLF_ROLES,
     SPY_CARD_THEMES,
     getRecommendedWerewolfRoles,

@@ -1,4 +1,4 @@
-// Game 2: Gián Điệp v2.1 — Tất cả cùng chơi (3 Chế độ, 5 Bộ chủ đề, Thẻ ảnh nền, Bot dẫn vòng & Đồng bộ Vote trực tiếp)
+// Game 2: Gián Điệp v2.2 — Tất cả cùng chơi, UI tối giản khi vào trận, Avatar & Thẻ bài 3D
 window.SpyGame = (() => {
   const {
     SPY_CARD_THEMES,
@@ -7,12 +7,14 @@ window.SpyGame = (() => {
     TWIST_QUESTION_PAIRS,
     SPYFALL_LOCATIONS,
     SPYFALL_QUESTIONS,
-    ROUND_SPARKS
+    ROUND_SPARKS,
+    getRandomAvatarId
   } = window.GameData;
 
   let session = null;
   let isHost = false;
   let myName = '';
+  let myAvatarId = '';
   let state = null;
   let mySecret = null; // { mode, role, word, hint, question, location, locRole }
   let cardRevealed = false;
@@ -70,6 +72,7 @@ window.SpyGame = (() => {
       players: s.players.map((p) => ({
         id: p.id,
         name: p.name,
+        avatarId: p.avatarId || 'boy_smile',
         ready: p.ready,
         alive: p.alive,
         isDemo: p.isDemo,
@@ -106,10 +109,11 @@ window.SpyGame = (() => {
   }
 
   // ==================== ENTRY POINTS ====================
-  function startHost(roomCode, hostName) {
+  function startHost(roomCode, hostName, hostAvatarId) {
     cleanup();
     isHost = true;
     myName = hostName;
+    myAvatarId = hostAvatarId || window.AppUI.getSavedAvatarId();
     demoCounter = 1;
     state = createInitialState(roomCode);
 
@@ -125,6 +129,7 @@ window.SpyGame = (() => {
     state.players.push({
       id: session.clientId,
       name: myName,
+      avatarId: myAvatarId,
       ready: false,
       alive: true,
       isDemo: false,
@@ -137,16 +142,17 @@ window.SpyGame = (() => {
     render();
   }
 
-  function joinAsPlayer(roomCode, playerName) {
+  function joinAsPlayer(roomCode, playerName, playerAvatarId) {
     cleanup();
     isHost = false;
     myName = playerName;
+    myAvatarId = playerAvatarId || window.AppUI.getSavedAvatarId();
     lastReceivedSeq = -1;
     state = createInitialState(roomCode);
 
     const announceJoin = () => {
       if (!session || isHost) return;
-      session.send('SPY_JOIN', { name: myName });
+      session.send('SPY_JOIN', { name: myName, avatarId: myAvatarId });
     };
 
     session = window.RoomNetwork.createSession({
@@ -186,6 +192,7 @@ window.SpyGame = (() => {
 
     if (type === 'SPY_JOIN') {
       const cleanName = String(payload.name || 'Người chơi').trim().slice(0, 20) || 'Người chơi';
+      const avatarId = payload.avatarId || getRandomAvatarId(state.players.length);
       let player = state.players.find((p) => p.id === senderId);
       if (!player) {
         if (state.phase !== 'LOBBY') {
@@ -195,6 +202,7 @@ window.SpyGame = (() => {
           if (byName) {
             const oldId = byName.id;
             byName.id = senderId;
+            if (payload.avatarId) byName.avatarId = payload.avatarId;
             if (state.pendingMrWhiteId === oldId) state.pendingMrWhiteId = senderId;
             syncStateToClients();
             deliverSecretToPlayer(byName);
@@ -204,6 +212,7 @@ window.SpyGame = (() => {
         player = {
           id: senderId,
           name: cleanName,
+          avatarId,
           ready: false,
           alive: true,
           isDemo: false,
@@ -212,6 +221,7 @@ window.SpyGame = (() => {
         state.players.push(player);
       } else if (state.phase === 'LOBBY') {
         player.name = cleanName;
+        if (payload.avatarId) player.avatarId = payload.avatarId;
       }
 
       syncStateToClients();
@@ -226,6 +236,7 @@ window.SpyGame = (() => {
       const p = state.players.find((x) => x.id === senderId);
       if (p && state.phase === 'LOBBY') {
         p.name = String(payload.name || p.name).trim().slice(0, 20) || p.name;
+        if (payload.avatarId) p.avatarId = payload.avatarId;
         syncStateToClients();
         render();
       }
@@ -612,23 +623,32 @@ window.SpyGame = (() => {
       window.AppUI.copyText(url, 'Đã copy link mời phòng Gián Điệp!');
     };
 
-    document.getElementById('spy-leave').onclick = () => {
+    const leaveRoom = () => {
       if (!isHost && session) session.send('SPY_LEAVE', {});
       cleanup();
       window.AppUI.goHome();
     };
 
+    document.getElementById('spy-leave').onclick = leaveRoom;
+    document.getElementById('spy-ingame-leave').onclick = leaveRoom;
+
     document.getElementById('spy-edit-name').onclick = async () => {
-      const newName = await window.AppUI.promptNameDialog(myName);
-      if (newName && newName !== myName) {
-        myName = newName;
+      const profile = await window.AppUI.promptProfileDialog(myName, myAvatarId);
+      if (profile && (profile.name !== myName || profile.avatarId !== myAvatarId)) {
+        myName = profile.name;
+        myAvatarId = profile.avatarId;
+        localStorage.setItem('hq_player_name', myName);
+        window.AppUI.saveAvatarId(myAvatarId);
         if (isHost) {
           const me = state.players.find((p) => p.id === session.clientId);
-          if (me) me.name = myName;
+          if (me) {
+            me.name = myName;
+            me.avatarId = myAvatarId;
+          }
           syncStateToClients();
           render();
         } else {
-          session.send('SPY_RENAME', { name: myName });
+          session.send('SPY_RENAME', { name: myName, avatarId: myAvatarId });
         }
       }
     };
@@ -650,10 +670,12 @@ window.SpyGame = (() => {
       if (!isHost || state.phase !== 'LOBBY') return;
       const demoNames = ['An', 'Bình', 'Chi', 'Dũng', 'Hà', 'Khánh', 'Linh', 'Ngọc'];
       const name = `${demoNames[(demoCounter - 1) % demoNames.length]} (Test ${demoCounter})`;
+      const avatarId = getRandomAvatarId(state.players.length);
       demoCounter += 1;
       state.players.push({
         id: `spydemo_${Date.now()}_${demoCounter}`,
         name,
+        avatarId,
         ready: true,
         alive: true,
         isDemo: true,
@@ -795,10 +817,27 @@ window.SpyGame = (() => {
     window.AppUI.renderQrCode(document.getElementById('spy-qr'), shareUrl);
   }
 
+  function buildSpyPlayerLabelEl(player, sizeClass = 'avatar-md', suffix = '') {
+    const wrap = document.createElement('span');
+    wrap.className = 'player-name-with-avatar';
+    wrap.appendChild(window.AppUI.createAvatarEl(player?.avatarId, sizeClass));
+    const txt = document.createElement('strong');
+    txt.textContent = `${player?.name || '?'}${suffix}`;
+    wrap.appendChild(txt);
+    return wrap;
+  }
+
   function render() {
     if (!state || !session) return;
+    window.AppUI.setActiveGameMode(state.phase !== 'LOBBY', 'DAY');
+
     document.getElementById('spy-room-code').textContent = state.roomCode;
     document.getElementById('spy-my-name').textContent = myName;
+    const myAvSlot = document.getElementById('spy-my-avatar');
+    if (myAvSlot) {
+      myAvSlot.innerHTML = '';
+      myAvSlot.appendChild(window.AppUI.createAvatarEl(myAvatarId, 'avatar-md'));
+    }
 
     const lobbyEl = document.getElementById('spy-lobby');
     const gameEl = document.getElementById('spy-game');
@@ -835,11 +874,13 @@ window.SpyGame = (() => {
     listEl.innerHTML = '';
     state.players.forEach((p) => {
       const li = document.createElement('li');
-      li.className = 'player-item';
-      const label = `${p.name}${p.id === session.clientId ? ' (Bạn)' : ''}${p.id === state.hostId ? ' 👑' : ''}`;
-      li.innerHTML = `<span class="player-name-wrap">${escapeHtml(label)}</span><span class="pill ${
-        p.ready ? 'pill-ready' : 'pill-wait'
-      }">${p.ready ? 'Sẵn sàng' : 'Đang chờ'}</span>`;
+      li.className = 'player-item pop-in';
+      const suffix = `${p.id === session.clientId ? ' (Bạn)' : ''}${p.id === state.hostId ? ' 👑' : ''}`;
+      const left = buildSpyPlayerLabelEl(p, 'avatar-md', suffix);
+      const pill = document.createElement('span');
+      pill.className = `pill ${p.ready ? 'pill-ready' : 'pill-wait'}`;
+      pill.textContent = p.ready ? 'Sẵn sàng' : 'Đang chờ';
+      li.append(left, pill);
       listEl.appendChild(li);
     });
 
@@ -884,11 +925,8 @@ window.SpyGame = (() => {
   function renderSecretCard() {
     const btn = document.getElementById('spy-toggle-card');
     const bgLayer = document.getElementById('spy-card-bg');
-    const front = document.getElementById('spy-card-front');
-    const back = document.getElementById('spy-card-back');
     btn.setAttribute('aria-expanded', String(cardRevealed));
-    front.hidden = cardRevealed;
-    back.hidden = !cardRevealed;
+    btn.classList.toggle('is-flipped', cardRevealed);
 
     if (!mySecret) return;
     const theme = SPY_CARD_THEMES[mySecret.role] || SPY_CARD_THEMES.civilian;
@@ -944,7 +982,7 @@ window.SpyGame = (() => {
       const voter = state.players.find((p) => p.id === vId);
       if (!voter || !voter.alive) return;
       if (!groups[targetId]) groups[targetId] = [];
-      groups[targetId].push(voter.name);
+      groups[targetId].push({ id: voter.id, name: voter.name, avatarId: voter.avatarId });
     });
     return groups;
   }
@@ -1024,7 +1062,7 @@ window.SpyGame = (() => {
         const p = state.players.find((x) => x.id === id);
         if (p) {
           const li = document.createElement('li');
-          li.textContent = p.name;
+          li.appendChild(buildSpyPlayerLabelEl(p, 'avatar-sm'));
           orderList.appendChild(li);
         }
       });
@@ -1040,15 +1078,31 @@ window.SpyGame = (() => {
 
     state.players.forEach((p) => {
       const li = document.createElement('li');
-      li.className = `vote-row ${p.alive ? '' : 'eliminated'}`;
+      li.className = `vote-row pop-in ${p.alive ? '' : 'eliminated'}`;
 
       const voters = groups[p.id] || [];
-      const info = document.createElement('span');
-      info.innerHTML = `<strong>${escapeHtml(p.name)}</strong>${p.id === session.clientId ? ' (Bạn)' : ''} ${
-        voters.length > 0
-          ? `<span class="pill pill-ready">${voters.length} phiếu (${escapeHtml(voters.join(', '))})</span>`
-          : ''
-      }`;
+      const info = document.createElement('div');
+      info.appendChild(buildSpyPlayerLabelEl(p, 'avatar-md', p.id === session.clientId ? ' (Bạn)' : ''));
+
+      if (voters.length > 0) {
+        const voterWrap = document.createElement('div');
+        voterWrap.className = 'voter-avatars-mini';
+        const countSpan = document.createElement('span');
+        countSpan.className = 'pill pill-ready';
+        countSpan.textContent = `${voters.length} phiếu`;
+        voterWrap.appendChild(countSpan);
+
+        voters.forEach((v) => {
+          const pill = document.createElement('span');
+          pill.className = 'voter-pill-mini';
+          pill.appendChild(window.AppUI.createAvatarEl(v.avatarId, 'avatar-sm'));
+          const vName = document.createElement('span');
+          vName.textContent = v.name;
+          pill.appendChild(vName);
+          voterWrap.appendChild(pill);
+        });
+        info.appendChild(voterWrap);
+      }
 
       const actions = document.createElement('div');
       actions.style.display = 'flex';
@@ -1125,12 +1179,15 @@ window.SpyGame = (() => {
       revList.innerHTML = '';
       state.players.forEach((p) => {
         const li = document.createElement('li');
-        li.className = 'reveal-item';
+        li.className = 'reveal-item pop-in';
+        const left = buildSpyPlayerLabelEl(p, 'avatar-md');
+        const right = document.createElement('span');
         const roleLabel =
           p.role === 'spy' ? '🕵️ Gián Điệp' : p.role === 'mr_white' ? '🃏 Mr. White' : '🧑‍🌾 Dân Thường';
-        li.innerHTML = `<span><strong>${escapeHtml(p.name)}</strong></span><span>${roleLabel}${
-          p.word ? ` (${escapeHtml(p.word)})` : p.locRole ? ` (${escapeHtml(p.locRole)})` : ''
-        }</span>`;
+        right.textContent = `${roleLabel}${
+          p.word ? ` (${p.word})` : p.locRole ? ` (${p.locRole})` : ''
+        }`;
+        li.append(left, right);
         revList.appendChild(li);
       });
 

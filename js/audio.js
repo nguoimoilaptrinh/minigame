@@ -9,6 +9,13 @@ window.AudioEngine = (() => {
   let voices = [];
   let currentSpeakToken = 0;
   let currentAudioEl = null;
+  let isSpeakingState = false;
+
+  function emitSpeakState(speaking) {
+    if (isSpeakingState === speaking) return;
+    isSpeakingState = speaking;
+    document.dispatchEvent(new CustomEvent('audio-speak-state', { detail: { speaking } }));
+  }
 
   function ensureContext() {
     if (!ctx && (window.AudioContext || window.webkitAudioContext)) {
@@ -79,6 +86,7 @@ window.AudioEngine = (() => {
 
   function stopSpeech() {
     currentSpeakToken += 1;
+    emitSpeakState(false);
     if (currentAudioEl) {
       try {
         currentAudioEl.pause();
@@ -232,6 +240,7 @@ window.AudioEngine = (() => {
     const token = currentSpeakToken;
     const done = () => {
       if (token !== currentSpeakToken) return;
+      emitSpeakState(false);
       if (typeof onEnd === 'function') onEnd();
     };
 
@@ -241,6 +250,7 @@ window.AudioEngine = (() => {
       return;
     }
 
+    emitSpeakState(true);
     if (ttsMode === 'cloud') {
       const chunks = splitIntoChunks(text, 150);
       if (chunks.length > 0) {

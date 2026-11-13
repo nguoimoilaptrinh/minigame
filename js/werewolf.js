@@ -1,10 +1,11 @@
-// Game 1: Ma Sói v2.1 — Bot Quản Trò tự động, Thẻ bài ảnh nền, Đồng bộ Vote trực tiếp, Không đếm giờ
+// Game 1: Ma Sói v2.2 — Bot Quản Trò tối giản, Fix logic Sói & Vai trò, Avatar & Thẻ bài 3D
 window.WerewolfGame = (() => {
-  const { WEREWOLF_ROLES, getRecommendedWerewolfRoles } = window.GameData;
+  const { WEREWOLF_ROLES, getRecommendedWerewolfRoles, getRandomAvatarId } = window.GameData;
 
   let session = null;
   let isHost = false;
   let myName = '';
+  let myAvatarId = '';
   let state = null;
   let clientSecret = null; // { roleId, teammates: [] }
   let witchInfo = null;
@@ -38,7 +39,7 @@ window.WerewolfGame = (() => {
       phase: 'LOBBY', // LOBBY | ROLE_REVEAL | NIGHT | HUNTER_REVENGE | DAY | GAME_OVER
       nightNumber: 0,
       nightStep: null, // 'guard' | 'werewolf' | 'seer' | 'witch'
-      players: [], // { id, name, ready, alive, isDemo, roleId (host-only) }
+      players: [], // { id, name, avatarId, ready, alive, isDemo, roleId (host-only) }
       rolesConfig: getRecommendedWerewolfRoles(5),
       lastGuardedId: null,
       witchPotions: { save: true, poison: true },
@@ -48,6 +49,7 @@ window.WerewolfGame = (() => {
         wolfConfirmed: {},
         wolfTarget: null,
         seerTarget: null,
+        seerInspected: false,
         witchSave: false,
         witchPoisonTarget: null
       },
@@ -80,6 +82,7 @@ window.WerewolfGame = (() => {
       players: s.players.map((p) => ({
         id: p.id,
         name: p.name,
+        avatarId: p.avatarId || 'boy_smile',
         ready: p.ready,
         alive: p.alive,
         isDemo: p.isDemo,
@@ -139,10 +142,11 @@ window.WerewolfGame = (() => {
     window.AppUI.showView('view-werewolf-host');
   }
 
-  function joinAsPlayer(roomCode, playerName) {
+  function joinAsPlayer(roomCode, playerName, playerAvatarId) {
     cleanup();
     isHost = false;
     myName = playerName;
+    myAvatarId = playerAvatarId || window.AppUI.getSavedAvatarId();
     clientSecret = null;
     witchInfo = null;
     seerResult = null;
@@ -156,7 +160,7 @@ window.WerewolfGame = (() => {
 
     const announceJoin = () => {
       if (!session || isHost) return;
-      session.send('WW_JOIN', { name: myName });
+      session.send('WW_JOIN', { name: myName, avatarId: myAvatarId });
     };
 
     session = window.RoomNetwork.createSession({
@@ -194,6 +198,7 @@ window.WerewolfGame = (() => {
 
     if (type === 'WW_JOIN') {
       const cleanName = String(payload.name || 'Người chơi').trim().slice(0, 20) || 'Người chơi';
+      const avatarId = payload.avatarId || getRandomAvatarId(state.players.length);
       let player = state.players.find((p) => p.id === senderId);
       if (!player) {
         if (state.phase !== 'LOBBY') {
@@ -203,6 +208,7 @@ window.WerewolfGame = (() => {
           if (byName) {
             const oldId = byName.id;
             byName.id = senderId;
+            if (payload.avatarId) byName.avatarId = payload.avatarId;
             if (state.pendingHunterId === oldId) state.pendingHunterId = senderId;
             syncStateToClients();
             sendSecretToPlayer(byName);
@@ -215,6 +221,7 @@ window.WerewolfGame = (() => {
         player = {
           id: senderId,
           name: cleanName,
+          avatarId,
           ready: false,
           alive: true,
           isDemo: false,
@@ -226,6 +233,7 @@ window.WerewolfGame = (() => {
         }
       } else if (state.phase === 'LOBBY') {
         player.name = cleanName;
+        if (payload.avatarId) player.avatarId = payload.avatarId;
       }
 
       syncStateToClients();
@@ -243,6 +251,7 @@ window.WerewolfGame = (() => {
       const p = state.players.find((x) => x.id === senderId);
       if (p && state.phase === 'LOBBY') {
         p.name = String(payload.name || p.name).trim().slice(0, 20) || p.name;
+        if (payload.avatarId) p.avatarId = payload.avatarId;
         syncStateToClients();
         renderHost();
       }
@@ -374,6 +383,7 @@ window.WerewolfGame = (() => {
       wolfConfirmed: {},
       wolfTarget: null,
       seerTarget: null,
+      seerInspected: false,
       witchSave: false,
       witchPoisonTarget: null
     };
@@ -460,12 +470,15 @@ window.WerewolfGame = (() => {
   }
 
   function pickMajorityWolfTarget(lastTargetId) {
+    const isValidPrey = (id) =>
+      Boolean(id) && state.players.some((p) => p.id === id && p.alive && p.roleId !== 'werewolf');
     const tally = {};
     Object.values(state.nightActions.wolfVotes || {}).forEach((tId) => {
-      if (tId) tally[tId] = (tally[tId] || 0) + 1;
+      if (isValidPrey(tId)) tally[tId] = (tally[tId] || 0) + 1;
     });
     const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
-    return sorted[0] ? sorted[0][0] : lastTargetId;
+    if (sorted[0]) return sorted[0][0];
+    return isValidPrey(lastTargetId) ? lastTargetId : null;
   }
 
   function finishWerewolfStep(targetId) {
@@ -551,12 +564,22 @@ window.WerewolfGame = (() => {
 
     if (state.phase === 'NIGHT') {
       if (state.nightStep === 'guard' && payload.step === 'guard' && player.alive && player.roleId === 'guard') {
-        finishGuardStep(payload.targetId || null);
+        const tId = payload.targetId || null;
+        if (tId) {
+          const guardTarget = state.players.find((p) => p.id === tId && p.alive);
+          if (!guardTarget || tId === state.lastGuardedId) return;
+        }
+        finishGuardStep(tId);
         return;
       }
 
       if (state.nightStep === 'werewolf' && payload.step === 'werewolf' && player.alive && player.roleId === 'werewolf') {
-        state.nightActions.wolfVotes[senderId] = payload.targetId;
+        const prey = state.players.find(
+          (p) => p.id === payload.targetId && p.alive && p.roleId !== 'werewolf'
+        );
+        if (!prey) return;
+
+        state.nightActions.wolfVotes[senderId] = prey.id;
         if (payload.confirm) state.nightActions.wolfConfirmed[senderId] = true;
 
         const aliveWolves = state.players.filter((p) => p.alive && p.roleId === 'werewolf' && !p.isDemo);
@@ -574,7 +597,7 @@ window.WerewolfGame = (() => {
         if (payload.confirm) {
           const allConfirmed = aliveWolves.every((w) => Boolean(state.nightActions.wolfConfirmed[w.id]));
           if (allConfirmed || aliveWolves.length === 1) {
-            finishWerewolfStep(pickMajorityWolfTarget(payload.targetId));
+            finishWerewolfStep(pickMajorityWolfTarget(prey.id));
           }
         }
         return;
@@ -582,8 +605,13 @@ window.WerewolfGame = (() => {
 
       if (state.nightStep === 'seer' && payload.step === 'seer' && player.alive && player.roleId === 'seer') {
         if (payload.action === 'inspect' && payload.targetId) {
-          const target = state.players.find((p) => p.id === payload.targetId);
+          if (state.nightActions.seerInspected) return;
+          const target = state.players.find(
+            (p) => p.id === payload.targetId && p.alive && p.id !== senderId
+          );
           if (target) {
+            state.nightActions.seerInspected = true;
+            state.nightActions.seerTarget = target.id;
             session.send(
               'WW_SEER_RESULT',
               {
@@ -601,13 +629,26 @@ window.WerewolfGame = (() => {
       }
 
       if (state.nightStep === 'witch' && payload.step === 'witch' && player.alive && player.roleId === 'witch') {
-        finishWitchStep(Boolean(payload.useSave), payload.poisonTargetId || null);
+        const wantSave = Boolean(payload.useSave);
+        let poisonId = payload.poisonTargetId || null;
+        if (poisonId) {
+          const validPoison = state.players.find((p) => p.id === poisonId && p.alive && p.id !== senderId);
+          if (!validPoison || (wantSave && poisonId === state.nightActions.wolfTarget)) {
+            poisonId = null;
+          }
+        }
+        finishWitchStep(wantSave, poisonId);
         return;
       }
     }
 
     if (state.phase === 'HUNTER_REVENGE' && payload.step === 'hunter' && senderId === state.pendingHunterId) {
-      resolveHunterShot(payload.targetId || null);
+      let targetId = payload.targetId || null;
+      if (targetId) {
+        const validShot = state.players.find((p) => p.id === targetId && p.alive && p.id !== senderId);
+        if (!validShot) return;
+      }
+      resolveHunterShot(targetId);
     }
   }
 
@@ -791,12 +832,12 @@ window.WerewolfGame = (() => {
   }
 
   function getDayVoteTally() {
-    const groups = {}; // targetId -> [voterName]
+    const groups = {}; // targetId -> [{ id, name, avatarId }]
     Object.entries(state.dayVotes || {}).forEach(([vId, tId]) => {
       const voter = state.players.find((p) => p.id === vId);
       if (!voter || !voter.alive) return;
       if (!groups[tId]) groups[tId] = [];
-      groups[tId].push(voter.name);
+      groups[tId].push({ id: voter.id, name: voter.name, avatarId: voter.avatarId });
     });
 
     const entries = Object.entries(groups).sort((a, b) => b[1].length - a[1].length);
@@ -904,19 +945,34 @@ window.WerewolfGame = (() => {
       window.AudioEngine.speak('Xin chào cả hội! Bot Quản Trò đã sẵn sàng dẫn dắt ván Ma Sói hôm nay.');
     };
 
-    document.getElementById('ww-host-leave').onclick = () => {
+    const leaveHost = async () => {
+      if (state && state.phase !== 'LOBBY') {
+        const ok = await window.AppUI.confirmDialog(
+          'Thoát phòng Ma Sói?',
+          'Ván đấu đang diễn ra sẽ kết thúc nếu Host thoát.'
+        );
+        if (!ok) return;
+      }
       cleanup();
       window.AppUI.goHome();
+    };
+
+    document.getElementById('ww-host-leave').onclick = leaveHost;
+    document.getElementById('ww-ingame-leave').onclick = leaveHost;
+    document.getElementById('ww-ingame-sound').onclick = () => {
+      window.AppUI.openSoundSettings();
     };
 
     document.getElementById('ww-host-add-demo').onclick = () => {
       if (!state || state.phase !== 'LOBBY') return;
       const demoNames = ['An', 'Bình', 'Chi', 'Dũng', 'Hà', 'Khánh', 'Linh', 'Minh', 'Ngọc', 'Phúc'];
       const name = `${demoNames[(demoCounter - 1) % demoNames.length]} (Test ${demoCounter})`;
+      const avatarId = getRandomAvatarId(state.players.length);
       demoCounter += 1;
       state.players.push({
         id: `demo_${Date.now()}_${demoCounter}`,
         name,
+        avatarId,
         ready: true,
         alive: true,
         isDemo: true,
@@ -1003,8 +1059,22 @@ window.WerewolfGame = (() => {
     window.AppUI.renderQrCode(document.getElementById('ww-host-qr'), shareUrl);
   }
 
+  function buildPlayerLabelEl(player, sizeClass = 'avatar-md', suffix = '') {
+    const wrap = document.createElement('span');
+    wrap.className = 'player-name-with-avatar';
+    wrap.appendChild(window.AppUI.createAvatarEl(player?.avatarId, sizeClass));
+    const txt = document.createElement('strong');
+    txt.textContent = `${player?.name || '?'}${suffix}`;
+    wrap.appendChild(txt);
+    return wrap;
+  }
+
   function renderHost() {
     if (!state) return;
+    const isActive = state.phase !== 'LOBBY';
+    const phaseMode = state.phase === 'NIGHT' || state.phase === 'ROLE_REVEAL' ? 'NIGHT' : 'DAY';
+    window.AppUI.setActiveGameMode(isActive, phaseMode);
+
     const lobbyEl = document.getElementById('ww-host-lobby');
     const gameEl = document.getElementById('ww-host-game');
 
@@ -1035,10 +1105,8 @@ window.WerewolfGame = (() => {
     } else {
       state.players.forEach((p) => {
         const li = document.createElement('li');
-        li.className = 'player-item';
-        const left = document.createElement('span');
-        left.className = 'player-name-wrap';
-        left.textContent = p.name;
+        li.className = 'player-item pop-in';
+        const left = buildPlayerLabelEl(p, 'avatar-md');
 
         const right = document.createElement('div');
         right.style.display = 'flex';
@@ -1211,12 +1279,36 @@ window.WerewolfGame = (() => {
       } else {
         tally.entries.forEach(([tId, voters]) => {
           const li = document.createElement('li');
-          li.className = 'vote-tally-item';
-          const targetName =
-            tId === '__skip__' ? '🏳️ Bỏ phiếu trắng' : state.players.find((p) => p.id === tId)?.name || '?';
-          li.innerHTML = `<span><strong>${escapeHtml(targetName)}</strong> <small>(${escapeHtml(
-            voters.join(', ')
-          )})</small></span><span class="pill pill-ready">${voters.length} phiếu</span>`;
+          li.className = 'vote-tally-item pop-in';
+
+          const leftCol = document.createElement('div');
+          if (tId === '__skip__') {
+            const skipLabel = document.createElement('strong');
+            skipLabel.textContent = '🏳️ Bỏ phiếu trắng';
+            leftCol.appendChild(skipLabel);
+          } else {
+            const targetPlayer = state.players.find((p) => p.id === tId);
+            leftCol.appendChild(buildPlayerLabelEl(targetPlayer, 'avatar-md'));
+          }
+
+          const voterWrap = document.createElement('div');
+          voterWrap.className = 'voter-avatars-mini';
+          voters.forEach((v) => {
+            const pill = document.createElement('span');
+            pill.className = 'voter-pill-mini';
+            pill.appendChild(window.AppUI.createAvatarEl(v.avatarId, 'avatar-sm'));
+            const vName = document.createElement('span');
+            vName.textContent = v.name;
+            pill.appendChild(vName);
+            voterWrap.appendChild(pill);
+          });
+          leftCol.appendChild(voterWrap);
+
+          const countPill = document.createElement('span');
+          countPill.className = 'pill pill-ready';
+          countPill.textContent = `${voters.length} phiếu`;
+
+          li.append(leftCol, countPill);
           tallyEl.appendChild(li);
         });
       }
@@ -1241,9 +1333,12 @@ window.WerewolfGame = (() => {
         .forEach((p) => {
           const btn = document.createElement('button');
           btn.type = 'button';
-          btn.className = 'lynch-btn';
+          btn.className = 'lynch-btn target-btn-avatar';
           btn.disabled = !canLynch;
-          btn.textContent = `⚖️ Treo cổ ${p.name}`;
+          btn.appendChild(window.AppUI.createAvatarEl(p.avatarId, 'avatar-sm'));
+          const span = document.createElement('span');
+          span.textContent = `Treo cổ ${p.name}`;
+          btn.appendChild(span);
           btn.addEventListener('click', async () => {
             const ok = await window.AppUI.confirmDialog(
               'Xác nhận treo cổ?',
@@ -1266,45 +1361,35 @@ window.WerewolfGame = (() => {
       state.players.forEach((p) => {
         const r = WEREWOLF_ROLES[p.roleId] || WEREWOLF_ROLES.villager;
         const li = document.createElement('li');
-        li.className = 'reveal-item';
-        li.innerHTML = `<span><strong>${escapeHtml(p.name)}</strong> (${p.alive ? 'Sống' : 'Đã chết'})</span><span>${r.icon} ${escapeHtml(r.name)}</span>`;
+        li.className = 'reveal-item pop-in';
+        const left = buildPlayerLabelEl(p, 'avatar-md', ` (${p.alive ? 'Sống' : 'Đã chết'})`);
+        const right = document.createElement('span');
+        right.textContent = `${r.icon} ${r.name}`;
+        li.append(left, right);
         revealEl.appendChild(li);
       });
     }
-
-    const boardEl = document.getElementById('ww-host-board-players');
-    boardEl.innerHTML = '';
-    state.players.forEach((p) => {
-      const li = document.createElement('li');
-      li.className = `board-player-tile ${p.alive ? '' : 'dead'}`;
-      li.innerHTML = `<span>${escapeHtml(p.name)}</span><span class="pill ${p.alive ? 'pill-alive' : 'pill-dead'}">${
-        p.alive ? 'Sống' : 'Chết'
-      }</span>`;
-      boardEl.appendChild(li);
-    });
-
-    const logEl = document.getElementById('ww-host-log-list');
-    logEl.innerHTML = '';
-    state.logs.forEach((entry) => {
-      const li = document.createElement('li');
-      li.textContent = entry;
-      logEl.appendChild(li);
-    });
   }
 
   // ==================== PLAYER UI & EVENTS ====================
   function bindPlayerEvents() {
-    document.getElementById('ww-pl-leave').onclick = () => {
+    const leavePlayer = () => {
       if (session) session.send('WW_LEAVE', {});
       cleanup();
       window.AppUI.goHome();
     };
 
+    document.getElementById('ww-pl-leave').onclick = leavePlayer;
+    document.getElementById('ww-pl-ingame-leave').onclick = leavePlayer;
+
     document.getElementById('ww-pl-edit-name').onclick = async () => {
-      const newName = await window.AppUI.promptNameDialog(myName);
-      if (newName && newName !== myName) {
-        myName = newName;
-        if (session) session.send('WW_RENAME', { name: myName });
+      const profile = await window.AppUI.promptProfileDialog(myName, myAvatarId);
+      if (profile && (profile.name !== myName || profile.avatarId !== myAvatarId)) {
+        myName = profile.name;
+        myAvatarId = profile.avatarId;
+        localStorage.setItem('hq_player_name', myName);
+        window.AppUI.saveAvatarId(myAvatarId);
+        if (session) session.send('WW_RENAME', { name: myName, avatarId: myAvatarId });
         renderPlayer();
       }
     };
@@ -1325,11 +1410,8 @@ window.WerewolfGame = (() => {
   function renderSecretCard() {
     const btn = document.getElementById('ww-pl-toggle-card');
     const bgLayer = document.getElementById('ww-pl-card-bg');
-    const front = document.getElementById('ww-pl-card-front');
-    const back = document.getElementById('ww-pl-card-back');
     btn.setAttribute('aria-expanded', String(cardRevealed));
-    front.hidden = cardRevealed;
-    back.hidden = !cardRevealed;
+    btn.classList.toggle('is-flipped', cardRevealed);
 
     if (clientSecret && clientSecret.roleId) {
       const role = WEREWOLF_ROLES[clientSecret.roleId];
@@ -1355,8 +1437,17 @@ window.WerewolfGame = (() => {
 
   function renderPlayer() {
     if (!state || !session) return;
+    const isActive = state.phase !== 'LOBBY';
+    const phaseMode = state.phase === 'NIGHT' || state.phase === 'ROLE_REVEAL' ? 'NIGHT' : 'DAY';
+    window.AppUI.setActiveGameMode(isActive, phaseMode);
+
     document.getElementById('ww-pl-room-code').textContent = state.roomCode;
     document.getElementById('ww-pl-my-name').textContent = myName;
+    const myAvSlot = document.getElementById('ww-pl-my-avatar');
+    if (myAvSlot) {
+      myAvSlot.innerHTML = '';
+      myAvSlot.appendChild(window.AppUI.createAvatarEl(myAvatarId, 'avatar-md'));
+    }
 
     const lobbyEl = document.getElementById('ww-pl-lobby');
     const gameEl = document.getElementById('ww-pl-game');
@@ -1380,10 +1471,12 @@ window.WerewolfGame = (() => {
       list.innerHTML = '';
       state.players.forEach((p) => {
         const li = document.createElement('li');
-        li.className = 'player-item';
-        li.innerHTML = `<span>${escapeHtml(p.name)}${p.id === session.clientId ? ' (Bạn)' : ''}</span><span class="pill ${
-          p.ready ? 'pill-ready' : 'pill-wait'
-        }">${p.ready ? 'Sẵn sàng' : 'Đang chờ'}</span>`;
+        li.className = 'player-item pop-in';
+        const left = buildPlayerLabelEl(p, 'avatar-sm', p.id === session.clientId ? ' (Bạn)' : '');
+        const pill = document.createElement('span');
+        pill.className = `pill ${p.ready ? 'pill-ready' : 'pill-wait'}`;
+        pill.textContent = p.ready ? 'Sẵn sàng' : 'Đang chờ';
+        li.append(left, pill);
         list.appendChild(li);
       });
       return;
@@ -1409,21 +1502,19 @@ window.WerewolfGame = (() => {
     document.getElementById('ww-pl-phase-badge').textContent = phaseMap[state.phase] || state.phase;
 
     renderPlayerActionArea(alive);
+  }
 
-    const boardList = document.getElementById('ww-pl-board-list');
-    boardList.innerHTML = '';
-    state.players.forEach((p) => {
-      const li = document.createElement('li');
-      li.className = `player-item ${p.alive ? '' : 'dead'}`;
-      const rName =
-        state.phase === 'GAME_OVER' && p.roleId
-          ? ` — ${WEREWOLF_ROLES[p.roleId]?.icon || ''} ${WEREWOLF_ROLES[p.roleId]?.name || ''}`
-          : '';
-      li.innerHTML = `<span>${escapeHtml(p.name)}${escapeHtml(rName)}</span><span class="pill ${
-        p.alive ? 'pill-alive' : 'pill-dead'
-      }">${p.alive ? 'Sống' : 'Chết'}</span>`;
-      boardList.appendChild(li);
-    });
+  function makeTargetBtn(player, labelText, isSelected, isDisabled, onClick) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = `target-btn target-btn-avatar ${isSelected ? 'selected' : ''}`;
+    btn.disabled = Boolean(isDisabled);
+    btn.appendChild(window.AppUI.createAvatarEl(player.avatarId, 'avatar-sm'));
+    const span = document.createElement('span');
+    span.textContent = labelText;
+    btn.appendChild(span);
+    btn.addEventListener('click', onClick);
+    return btn;
   }
 
   function renderPlayerActionArea(alive) {
@@ -1456,14 +1547,11 @@ window.WerewolfGame = (() => {
         state.players
           .filter((p) => p.alive && p.id !== session.clientId)
           .forEach((p) => {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.className = 'target-btn';
-            btn.textContent = `🎯 Bắn ${p.name}`;
-            btn.addEventListener('click', () => {
-              session.send('WW_ACTION', { step: 'hunter', targetId: p.id });
-            });
-            grid.appendChild(btn);
+            grid.appendChild(
+              makeTargetBtn(p, `🎯 Bắn ${p.name}`, false, false, () => {
+                session.send('WW_ACTION', { step: 'hunter', targetId: p.id });
+              })
+            );
           });
         area.appendChild(grid);
 
@@ -1515,14 +1603,17 @@ window.WerewolfGame = (() => {
       state.players
         .filter((p) => p.alive && p.id !== session.clientId)
         .forEach((p) => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = `target-btn ${myVote === p.id ? 'selected' : ''}`;
-          btn.textContent = myVote === p.id ? `✓ Vote ${p.name}` : `⚖️ ${p.name}`;
-          btn.addEventListener('click', () => {
-            session.send('WW_DAY_VOTE', { targetId: p.id });
-          });
-          grid.appendChild(btn);
+          grid.appendChild(
+            makeTargetBtn(
+              p,
+              myVote === p.id ? `✓ Vote ${p.name}` : p.name,
+              myVote === p.id,
+              false,
+              () => {
+                session.send('WW_DAY_VOTE', { targetId: p.id });
+              }
+            )
+          );
         });
 
       const skipVoteBtn = document.createElement('button');
@@ -1566,17 +1657,19 @@ window.WerewolfGame = (() => {
     state.players
       .filter((p) => p.alive)
       .forEach((p) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = `target-btn ${selectedNightTarget === p.id ? 'selected' : ''}`;
         const blocked = state.lastGuardedId === p.id;
-        btn.disabled = blocked;
-        btn.textContent = blocked ? `${p.name} (Đêm trước)` : p.name;
-        btn.addEventListener('click', () => {
-          selectedNightTarget = p.id;
-          renderPlayer();
-        });
-        grid.appendChild(btn);
+        grid.appendChild(
+          makeTargetBtn(
+            p,
+            blocked ? `${p.name} (Đêm trước)` : p.name,
+            selectedNightTarget === p.id,
+            blocked,
+            () => {
+              selectedNightTarget = p.id;
+              renderPlayer();
+            }
+          )
+        );
       });
     area.appendChild(grid);
 
@@ -1612,23 +1705,22 @@ window.WerewolfGame = (() => {
     }
 
     const iConfirmed = Boolean(wolfConfirmedMap[session.clientId]);
+    const mateIds = new Set((clientSecret?.teammates || []).map((m) => m.id));
+    const candidates = state.players.filter(
+      (p) => p.alive && p.id !== session.clientId && !mateIds.has(p.id)
+    );
+
     const grid = document.createElement('div');
     grid.className = 'target-grid';
-    state.players
-      .filter((p) => p.alive)
-      .forEach((p) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = `target-btn ${selectedNightTarget === p.id ? 'selected' : ''}`;
-        btn.disabled = iConfirmed;
-        btn.textContent = p.name;
-        btn.addEventListener('click', () => {
+    candidates.forEach((p) => {
+      grid.appendChild(
+        makeTargetBtn(p, p.name, selectedNightTarget === p.id, iConfirmed, () => {
           selectedNightTarget = p.id;
           session.send('WW_ACTION', { step: 'werewolf', targetId: p.id, confirm: false });
           renderPlayer();
-        });
-        grid.appendChild(btn);
-      });
+        })
+      );
+    });
     area.appendChild(grid);
 
     const confirm = document.createElement('button');
@@ -1678,14 +1770,11 @@ window.WerewolfGame = (() => {
     state.players
       .filter((p) => p.alive && p.id !== session.clientId)
       .forEach((p) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'target-btn';
-        btn.textContent = `🔮 ${p.name}`;
-        btn.addEventListener('click', () => {
-          session.send('WW_ACTION', { step: 'seer', action: 'inspect', targetId: p.id });
-        });
-        grid.appendChild(btn);
+        grid.appendChild(
+          makeTargetBtn(p, `🔮 ${p.name}`, false, false, () => {
+            session.send('WW_ACTION', { step: 'seer', action: 'inspect', targetId: p.id });
+          })
+        );
       });
     area.appendChild(grid);
   }
@@ -1711,6 +1800,9 @@ window.WerewolfGame = (() => {
       saveBtn.textContent = witchSaveChoice ? `✅ Đã chọn CỨU ${info.victimName}` : `💚 Dùng Bình Cứu ${info.victimName}`;
       saveBtn.addEventListener('click', () => {
         witchSaveChoice = !witchSaveChoice;
+        if (witchSaveChoice && info.victimId && witchPoisonChoice === info.victimId) {
+          witchPoisonChoice = null;
+        }
         renderPlayer();
       });
       saveBox.appendChild(saveBtn);
@@ -1731,17 +1823,20 @@ window.WerewolfGame = (() => {
       const grid = document.createElement('div');
       grid.className = 'target-grid';
       state.players
-        .filter((p) => p.alive && p.id !== session.clientId)
+        .filter((p) => p.alive && p.id !== session.clientId && !(witchSaveChoice && info.victimId === p.id))
         .forEach((p) => {
-          const btn = document.createElement('button');
-          btn.type = 'button';
-          btn.className = `target-btn ${witchPoisonChoice === p.id ? 'selected' : ''}`;
-          btn.textContent = `☠️ ${p.name}`;
-          btn.addEventListener('click', () => {
-            witchPoisonChoice = witchPoisonChoice === p.id ? null : p.id;
-            renderPlayer();
-          });
-          grid.appendChild(btn);
+          grid.appendChild(
+            makeTargetBtn(
+              p,
+              `☠️ ${p.name}`,
+              witchPoisonChoice === p.id,
+              false,
+              () => {
+                witchPoisonChoice = witchPoisonChoice === p.id ? null : p.id;
+                renderPlayer();
+              }
+            )
+          );
         });
       poisonWrap.appendChild(grid);
     }

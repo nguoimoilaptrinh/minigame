@@ -1,10 +1,14 @@
-# 🌙 Hội Quán Ma Sói & Gián Điệp (v2.1)
+# 🌙 Hội Quán Ma Sói & Gián Điệp (v2.2)
 
 Ứng dụng web chơi nhóm **5–10+ người** tại nhà — **tất cả mọi người đều là người chơi**, không ai phải đứng ngoài ra đề hay cầm trịch, không giới hạn thời gian tranh luận, **miễn phí 100%** khi đăng lên **GitHub Pages**.
 
 ---
 
-## ✨ Điểm mới ở phiên bản v2.1
+## ✨ Điểm mới ở phiên bản v2.2
+- **Giao diện tối giản chuẩn chơi Offline:** Khi vào trận, toàn bộ thanh tiêu đề, chân trang, cài đặt và bảng trạng thái thừa tự động ẩn đi — trên điện thoại chỉ giữ đúng Thẻ bài mật 3D & khu vực hành động; trên Laptop giữ sân khấu Bot Quản Trò & Bảng Vote trực tiếp.
+- **24 Icon Avatar mặt người đại diện:** Chọn Avatar trước khi vào phòng, hiển thị đồng bộ kèm tên trong Phòng chờ, Lưới hành động đêm và Bảng Vote trực tiếp (hiển thị cả Avatar người vote).
+- **Sửa triệt để lỗi vai trò Ma Sói & Ban đêm:** Sói không bao giờ tự cắn chính mình hoặc cắn nhầm đồng đội Ma Sói; Tiên Tri chỉ soi tối đa 1 người/đêm; Bảo Vệ & Phù Thủy kiểm tra hợp lệ chặt chẽ cả trên điện thoại lẫn Laptop.
+- **Hiệu ứng lật thẻ 3D & Motion:** Lật thẻ bài 3D (`rotateY`), màu nền chuyển Đêm/Ngày mượt mà và sóng âm thanh Bot Quản Trò khi đang nói.
 - **Giọng đọc AI Tiếng Việt tự nhiên hơn:** Ưu tiên dùng Google Cloud TTS (`vi-VN`), tự động tách câu ngắt nhịp mượt mà và dự phòng sang giọng trình duyệt nếu mất mạng.
 - **Thẻ bài có ảnh minh họa riêng cho từng vai trò** (`assets/roles/*.png`).
 - **Bỏ hoàn toàn đồng hồ đếm ngược:** Tranh luận ngoài đời thoải mái, vote xong mới chốt kết quả.
