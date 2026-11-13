@@ -1,8 +1,16 @@
-// Dữ liệu v2.2: Avatar người chơi, Vai trò Ma Sói, 5 Bộ chủ đề Ai Là Gián Điệp (125+ cặp từ), 36+ Câu hỏi Lệch Pha & 30 Địa điểm Spyfall
+// Dữ liệu v2.4: 8 Avatar ảnh hội bạn + 24 Icon, 11 Role Ma Sói (Phe Thứ 3 Thằng Ngố & Sát Nhân, Thần Tình Yêu, Già Làng, Sói Đầu Đàn), Gián Điệp
 window.GameData = (() => {
-  const APP_VERSION = 'v2.2';
+  const APP_VERSION = 'v2.4';
 
   const PLAYER_AVATARS = [
+    { id: 'friend_1', img: 'assets/avatars/friend_1.jpg', emoji: '🦇', label: 'Thành viên 1', bg: 'linear-gradient(135deg,#ec4899,#8b5cf6)' },
+    { id: 'friend_2', img: 'assets/avatars/friend_2.jpg', emoji: '🍊', label: 'Thành viên 2', bg: 'linear-gradient(135deg,#f97316,#facc15)' },
+    { id: 'friend_3', img: 'assets/avatars/friend_3.jpg', emoji: '👻', label: 'Thành viên 3', bg: 'linear-gradient(135deg,#6366f1,#0ea5e9)' },
+    { id: 'friend_4', img: 'assets/avatars/friend_4.jpg', emoji: '🐱', label: 'Thành viên 4', bg: 'linear-gradient(135deg,#f472b6,#fb7185)' },
+    { id: 'friend_5', img: 'assets/avatars/friend_5.jpg', emoji: '🕶️', label: 'Thành viên 5', bg: 'linear-gradient(135deg,#334155,#3b82f6)' },
+    { id: 'friend_6', img: 'assets/avatars/friend_6.jpg', emoji: '⛰️', label: 'Thành viên 6', bg: 'linear-gradient(135deg,#10b981,#06b6d4)' },
+    { id: 'friend_7', img: 'assets/avatars/friend_7.jpg', emoji: '👓', label: 'Thành viên 7', bg: 'linear-gradient(135deg,#38bdf8,#2563eb)' },
+    { id: 'friend_8', img: 'assets/avatars/friend_8.jpg', emoji: '🖤', label: 'Thành viên 8', bg: 'linear-gradient(135deg,#475569,#7c3aed)' },
     { id: 'boy_smile', emoji: '👦', label: 'Nam vui vẻ', bg: 'linear-gradient(135deg,#38bdf8,#6366f1)' },
     { id: 'girl_smile', emoji: '👧', label: 'Nữ đáng yêu', bg: 'linear-gradient(135deg,#f472b6,#e11d48)' },
     { id: 'man_cool', emoji: '👨', label: 'Anh trai', bg: 'linear-gradient(135deg,#3b82f6,#1d4ed8)' },
@@ -51,6 +59,16 @@ window.GameData = (() => {
       themeColor: '#ef4444',
       desc: 'Ban đêm thức dậy cùng đồng bọn chọn 1 dân làng để cắn. Ban ngày giả vờ làm dân lương thiện.'
     },
+    alpha_wolf: {
+      id: 'alpha_wolf',
+      name: 'Sói Đầu Đàn',
+      icon: '🩸',
+      team: 'werewolf',
+      teamName: 'Phe Ma Sói',
+      bgImage: 'assets/roles/alpha_wolf.png',
+      themeColor: '#dc2626',
+      desc: 'Thức dậy cùng bầy Sói. Có 1 lần duy nhất trong ván được phép Nguyền biến nạn nhân bị Sói cắn thành Ma Sói mới thay vì giết họ!'
+    },
     guard: {
       id: 'guard',
       name: 'Bảo Vệ',
@@ -91,6 +109,46 @@ window.GameData = (() => {
       themeColor: '#f59e0b',
       desc: 'Khi bị Sói cắn hoặc treo cổ, bạn hô bắn ở ngoài đời rồi tự bấm chọn người bị bắn trên điện thoại để Bot tiếp tục!'
     },
+    cupid: {
+      id: 'cupid',
+      name: 'Thần Tình Yêu',
+      icon: '💘',
+      team: 'villager',
+      teamName: 'Phe Dân Làng',
+      bgImage: 'assets/roles/cupid.png',
+      themeColor: '#ec4899',
+      desc: 'Đêm đầu tiên ghép đôi 2 người thành Cặp Đôi Tình Nhân. Nếu 1 người chết, người kia chết theo! Nếu 2 người khác phe, họ thành Phe Thứ 3 Cặp Đôi.'
+    },
+    elder: {
+      id: 'elder',
+      name: 'Già Làng',
+      icon: '🧓',
+      team: 'villager',
+      teamName: 'Phe Dân Làng',
+      bgImage: 'assets/roles/elder.png',
+      themeColor: '#d97706',
+      desc: 'Có 2 mạng trước nanh vuốt Ma Sói (Sói cắn lần đầu chỉ mất giáp, cắn lần 2 mới chết). Bị độc, Sát Nhân đâm, bắn hoặc treo cổ thì chết ngay.'
+    },
+    jester: {
+      id: 'jester',
+      name: 'Thằng Ngố (Kẻ Chán Đời)',
+      icon: '🃏',
+      team: 'neutral',
+      teamName: 'Phe Thứ 3 (Độc Lập)',
+      bgImage: 'assets/roles/jester.png',
+      themeColor: '#f43f5e',
+      desc: 'Bạn thuộc Phe Thứ 3 độc lập! Mục tiêu duy nhất: đánh lừa cả làng biểu quyết TREO CỔ bạn vào ban ngày để thắng ngay lập tức (nếu chết ban đêm thì thua).'
+    },
+    serial_killer: {
+      id: 'serial_killer',
+      name: 'Sát Nhân',
+      icon: '🗡️',
+      team: 'neutral',
+      teamName: 'Phe Thứ 3 (Độc Lập)',
+      bgImage: 'assets/roles/serial_killer.png',
+      themeColor: '#e11d48',
+      desc: 'Thuộc Phe Thứ 3 độc lập! Mỗi đêm thức dậy chọn ám sát 1 người. Thắng khi trở thành người sống sót cuối cùng!'
+    },
     villager: {
       id: 'villager',
       name: 'Dân Làng',
@@ -120,14 +178,42 @@ window.GameData = (() => {
 
   function getRecommendedWerewolfRoles(count) {
     const n = Math.max(5, count || 5);
-    if (n === 5) return { werewolf: 1, seer: 1, guard: 1, witch: 0, hunter: 0, villager: 2 };
-    if (n === 6) return { werewolf: 2, seer: 1, guard: 1, witch: 0, hunter: 0, villager: 2 };
-    if (n === 7) return { werewolf: 2, seer: 1, guard: 1, witch: 1, hunter: 0, villager: 2 };
-    if (n === 8) return { werewolf: 2, seer: 1, guard: 1, witch: 1, hunter: 1, villager: 2 };
-    if (n === 9) return { werewolf: 3, seer: 1, guard: 1, witch: 1, hunter: 1, villager: 2 };
-    const wolves = n >= 12 ? 4 : 3;
-    const villagers = Math.max(1, n - wolves - 4);
-    return { werewolf: wolves, seer: 1, guard: 1, witch: 1, hunter: 1, villager: villagers };
+    const base = {
+      werewolf: 1,
+      alpha_wolf: 0,
+      seer: 1,
+      guard: 1,
+      witch: 0,
+      hunter: 0,
+      cupid: 0,
+      elder: 0,
+      jester: 0,
+      serial_killer: 0,
+      villager: 2
+    };
+    if (n === 5) return { ...base };
+    if (n === 6) return { ...base, witch: 1, jester: 1, villager: 1 };
+    if (n === 7) return { ...base, werewolf: 2, witch: 1, jester: 1, villager: 1 };
+    if (n === 8) return { ...base, werewolf: 2, witch: 1, hunter: 1, cupid: 1, jester: 1, villager: 0 };
+    if (n === 9) return { ...base, werewolf: 1, alpha_wolf: 1, witch: 1, hunter: 1, cupid: 1, jester: 1, elder: 1, villager: 0 };
+    if (n === 10) return { ...base, werewolf: 1, alpha_wolf: 1, witch: 1, hunter: 1, cupid: 1, elder: 1, jester: 1, serial_killer: 1, villager: 0 };
+    if (n === 11) return { ...base, werewolf: 2, alpha_wolf: 1, witch: 1, hunter: 1, cupid: 1, elder: 1, jester: 1, serial_killer: 1, villager: 0 };
+    const wolves = n >= 13 ? 3 : 2;
+    const specialTotal = wolves + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1; // alpha_wolf + seer + guard + witch + hunter + cupid + elder + jester + serial_killer = wolves + 9
+    const villagers = Math.max(0, n - specialTotal);
+    return {
+      werewolf: wolves,
+      alpha_wolf: 1,
+      seer: 1,
+      guard: 1,
+      witch: 1,
+      hunter: 1,
+      cupid: 1,
+      elder: 1,
+      jester: 1,
+      serial_killer: 1,
+      villager: villagers
+    };
   }
 
   // 5 Bộ Chủ Đề cho Ai Là Gián Điệp (Undercover) - kèm Gợi ý khía cạnh mô tả

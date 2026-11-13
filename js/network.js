@@ -64,6 +64,7 @@ window.RoomNetwork = (() => {
 
     function handleIncoming(raw) {
       if (closed || !raw || !raw.msgId) return;
+      if (raw.roomCode && raw.roomCode !== roomCode) return;
       if (raw.senderId === clientId) return;
       if (!rememberMsg(raw.msgId)) return;
       if (!isHost && raw.targetId && raw.targetId !== clientId) return;
@@ -171,6 +172,7 @@ window.RoomNetwork = (() => {
       if (closed) return;
       const packet = {
         msgId: `${clientId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        roomCode,
         senderId: clientId,
         targetId,
         type,
@@ -202,7 +204,9 @@ window.RoomNetwork = (() => {
     }
 
     function destroy() {
+      if (closed) return;
       closed = true;
+      window.removeEventListener('pagehide', destroy);
       if (bc) {
         try {
           bc.close();
@@ -223,6 +227,8 @@ window.RoomNetwork = (() => {
       }
       peerConns.clear();
     }
+
+    window.addEventListener('pagehide', destroy);
 
     return {
       clientId,

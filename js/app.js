@@ -31,7 +31,19 @@ window.AppUI = (() => {
     span.className = `avatar-badge ${sizeClass}`;
     span.style.background = av.bg;
     span.setAttribute('aria-hidden', 'true');
-    span.textContent = av.emoji;
+    if (av.img) {
+      const img = document.createElement('img');
+      img.className = 'avatar-img';
+      img.src = av.img;
+      img.alt = '';
+      img.draggable = false;
+      img.onerror = () => {
+        span.textContent = av.emoji || '🙂';
+      };
+      span.appendChild(img);
+    } else {
+      span.textContent = av.emoji;
+    }
     return span;
   }
 
@@ -44,14 +56,24 @@ window.AppUI = (() => {
     const grid = document.createElement('div');
     grid.className = 'avatar-picker-grid';
     grid.setAttribute('role', 'group');
-    grid.setAttribute('aria-label', 'Danh sách icon mặt người đại diện');
+    grid.setAttribute('aria-label', 'Danh sách ảnh và icon đại diện');
 
     list.forEach((av) => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'avatar-option';
+      btn.className = av.img ? 'avatar-option avatar-option-photo' : 'avatar-option';
+      btn.dataset.avatarId = av.id;
       btn.style.background = av.bg;
-      btn.textContent = av.emoji;
+      if (av.img) {
+        const img = document.createElement('img');
+        img.className = 'avatar-img';
+        img.src = av.img;
+        img.alt = '';
+        img.draggable = false;
+        btn.appendChild(img);
+      } else {
+        btn.textContent = av.emoji;
+      }
       btn.title = av.label;
       btn.setAttribute('aria-label', av.label);
       btn.setAttribute('aria-pressed', av.id === current ? 'true' : 'false');
@@ -65,6 +87,45 @@ window.AppUI = (() => {
     });
 
     container.appendChild(grid);
+  }
+
+  // Cơ chế Nhấn & Giữ (Hold to Peek) chống lộ bài khi quên úp thẻ
+  function bindHoldToPeekCard(btnEl, setRevealed) {
+    if (!btnEl || btnEl.dataset.holdBound === '1') return;
+    btnEl.dataset.holdBound = '1';
+
+    const show = (e) => {
+      if (e && e.type === 'pointerdown' && e.button !== undefined && e.button !== 0) return;
+      setRevealed(true);
+    };
+    const hide = () => setRevealed(false);
+
+    btnEl.addEventListener('pointerdown', (e) => {
+      if (btnEl.setPointerCapture && e.pointerId !== undefined) {
+        try {
+          btnEl.setPointerCapture(e.pointerId);
+        } catch (_) {}
+      }
+      show(e);
+    });
+    btnEl.addEventListener('pointerup', hide);
+    btnEl.addEventListener('pointercancel', hide);
+    btnEl.addEventListener('pointerleave', hide);
+    btnEl.addEventListener('lostpointercapture', hide);
+    btnEl.addEventListener('blur', hide);
+    btnEl.addEventListener('contextmenu', (e) => e.preventDefault());
+    btnEl.addEventListener('keydown', (e) => {
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault();
+        show(e);
+      }
+    });
+    btnEl.addEventListener('keyup', (e) => {
+      if (e.key === ' ' || e.key === 'Enter') hide();
+    });
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) hide();
+    });
   }
 
   function showView(viewId) {
@@ -116,7 +177,7 @@ window.AppUI = (() => {
     }
   }
 
-  function renderQrCode(container, url) {
+  function renderQrCode(container, url, cellSize = 7) {
     if (!container) return;
     container.innerHTML = '';
     if (typeof window.qrcode === 'function') {
@@ -124,7 +185,7 @@ window.AppUI = (() => {
         const qr = window.qrcode(0, 'M');
         qr.addData(url);
         qr.make();
-        container.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+        container.innerHTML = qr.createSvgTag({ cellSize, margin: 2, scalable: true });
         return;
       } catch (_) {}
     }
@@ -136,6 +197,20 @@ window.AppUI = (() => {
     fallback.style.textAlign = 'center';
     fallback.textContent = 'Hãy gửi đường dẫn hoặc mã phòng cho bạn bè!';
     container.appendChild(fallback);
+  }
+
+  function openQrZoomModal(title, roomCode, url) {
+    const dialog = document.getElementById('dialog-qr-zoom');
+    if (!dialog) return;
+    const titleEl = document.getElementById('dialog-qr-zoom-title');
+    const codeEl = document.getElementById('dialog-qr-zoom-code');
+    const boxEl = document.getElementById('dialog-qr-zoom-box');
+    const urlEl = document.getElementById('dialog-qr-zoom-url');
+    if (titleEl && title) titleEl.textContent = title;
+    if (codeEl) codeEl.textContent = roomCode || '----';
+    if (urlEl) urlEl.textContent = url || '';
+    renderQrCode(boxEl, url, 11);
+    if (!dialog.open) dialog.showModal();
   }
 
   function confirmDialog(title, bodyText) {
@@ -228,6 +303,8 @@ window.AppUI = (() => {
     const voiceSel = document.getElementById('sound-voice-select');
     const rateRange = document.getElementById('sound-rate-range');
     const rateVal = document.getElementById('sound-rate-val');
+    const pitchRange = document.getElementById('sound-pitch-range');
+    const pitchVal = document.getElementById('sound-pitch-val');
 
     function populateVoices() {
       const list = window.AudioEngine.getVoices();
@@ -257,14 +334,17 @@ window.AppUI = (() => {
 
     document.addEventListener('audio-voices-updated', populateVoices);
     document.addEventListener('audio-speak-state', (e) => {
-      const botBox = document.getElementById('ww-bot-announcer');
-      if (botBox) botBox.classList.toggle('is-speaking', Boolean(e.detail?.speaking));
+      const speaking = Boolean(e.detail?.speaking);
+      const wwBotBox = document.getElementById('ww-bot-announcer');
+      const spyBotBox = document.getElementById('spy-bot-announcer');
+      if (wwBotBox) wwBotBox.classList.toggle('is-speaking', speaking);
+      if (spyBotBox) spyBotBox.classList.toggle('is-speaking', speaking);
     });
 
     openSoundModalFn = () => {
       window.AudioEngine.unlock();
       populateVoices();
-      browserVoiceWrap.hidden = ttsModeSel.value !== 'browser';
+      browserVoiceWrap.hidden = ttsModeSel.value === 'cloud';
       soundDialog.showModal();
     };
 
@@ -276,13 +356,16 @@ window.AppUI = (() => {
     });
 
     const syncAudioCfg = () => {
-      const rate = Number(rateRange.value) || 1.05;
+      const rate = Number(rateRange.value) || 1.02;
+      const pitch = pitchRange ? Number(pitchRange.value) || 1.0 : 1.0;
       rateVal.textContent = `${rate.toFixed(2).replace(/\.00$/, '.0')}x`;
-      browserVoiceWrap.hidden = ttsModeSel.value !== 'browser';
+      if (pitchVal) pitchVal.textContent = pitch.toFixed(2).replace(/\.00$/, '.0');
+      browserVoiceWrap.hidden = ttsModeSel.value === 'cloud';
       window.AudioEngine.setConfig({
         voice: voiceChk.checked,
         sfx: sfxChk.checked,
         rate,
+        pitch,
         mode: ttsModeSel.value,
         voiceURI: voiceSel.value
       });
@@ -293,11 +376,26 @@ window.AppUI = (() => {
     ttsModeSel.addEventListener('change', syncAudioCfg);
     voiceSel.addEventListener('change', syncAudioCfg);
     rateRange.addEventListener('input', syncAudioCfg);
+    if (pitchRange) pitchRange.addEventListener('input', syncAudioCfg);
 
     document.getElementById('btn-test-sfx').addEventListener('click', () => {
       window.AudioEngine.unlock();
       window.AudioEngine.playWolfHowl();
     });
+    const testSaveBtn = document.getElementById('btn-test-witch-save');
+    if (testSaveBtn) {
+      testSaveBtn.addEventListener('click', () => {
+        window.AudioEngine.unlock();
+        window.AudioEngine.playWitchSave();
+      });
+    }
+    const testPoisonBtn = document.getElementById('btn-test-witch-poison');
+    if (testPoisonBtn) {
+      testPoisonBtn.addEventListener('click', () => {
+        window.AudioEngine.unlock();
+        window.AudioEngine.playWitchPoison();
+      });
+    }
 
     document.getElementById('btn-test-tts').addEventListener('click', () => {
       window.AudioEngine.unlock();
@@ -314,6 +412,16 @@ window.AppUI = (() => {
     rulesDialog.addEventListener('close', () => {
       rulesDialog.returnValue = '';
     });
+
+    // QR Zoom Dialog
+    const qrZoomDialog = document.getElementById('dialog-qr-zoom');
+    const closeQrBtn = document.getElementById('btn-close-qr-zoom');
+    if (qrZoomDialog && closeQrBtn) {
+      closeQrBtn.addEventListener('click', () => {
+        qrZoomDialog.returnValue = '';
+        qrZoomDialog.close();
+      });
+    }
   }
 
   function setupHomeHandlers() {
@@ -330,6 +438,9 @@ window.AppUI = (() => {
     if (savedName) nameInput.value = savedName;
     let selectedAvatarId = getSavedAvatarId();
 
+    const getActiveJoinAvatarId = () =>
+      avatarPickerWrap?.querySelector('.avatar-option[aria-pressed="true"]')?.dataset.avatarId || selectedAvatarId;
+
     renderAvatarPicker(avatarPickerWrap, selectedAvatarId, (id) => {
       selectedAvatarId = id;
       saveAvatarId(id);
@@ -341,15 +452,10 @@ window.AppUI = (() => {
       window.WerewolfGame.startHost(code);
     });
 
-    createSpyBtn.addEventListener('click', async () => {
+    createSpyBtn.addEventListener('click', () => {
       window.AudioEngine.unlock();
-      const profile = await promptProfileDialog(savedName || 'Chủ phòng', selectedAvatarId);
-      if (!profile) return;
-      localStorage.setItem('hq_player_name', profile.name);
-      selectedAvatarId = profile.avatarId;
-      saveAvatarId(profile.avatarId);
       const code = window.RoomNetwork.generateRoomCode();
-      window.SpyGame.startHost(code, profile.name, profile.avatarId);
+      window.SpyGame.startHost(code);
     });
 
     // Clear lỗi khi đang nhập
@@ -393,13 +499,14 @@ window.AppUI = (() => {
         return;
       }
       nameInput.removeAttribute('aria-invalid');
+      const finalAvatarId = getActiveJoinAvatarId();
       localStorage.setItem('hq_player_name', playerName);
-      saveAvatarId(selectedAvatarId);
+      saveAvatarId(finalAvatarId);
 
       if (gameType === 'werewolf') {
-        window.WerewolfGame.joinAsPlayer(code, playerName, selectedAvatarId);
+        window.WerewolfGame.joinAsPlayer(code, playerName, finalAvatarId);
       } else {
-        window.SpyGame.joinAsPlayer(code, playerName, selectedAvatarId);
+        window.SpyGame.joinAsPlayer(code, playerName, finalAvatarId);
       }
     });
 
@@ -435,10 +542,12 @@ window.AppUI = (() => {
     saveAvatarId,
     createAvatarEl,
     renderAvatarPicker,
+    bindHoldToPeekCard,
     openSoundSettings,
     showToast,
     copyText,
     renderQrCode,
+    openQrZoomModal,
     confirmDialog,
     promptNameDialog,
     promptProfileDialog

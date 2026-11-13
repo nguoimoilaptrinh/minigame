@@ -1,10 +1,11 @@
-// Bộ máy âm thanh v2.0: Giọng đọc kép (Google Cloud TTS Tiếng Việt + Web Speech Fallback) & Web Audio SFX
+// Bộ máy âm thanh v2.3: Giọng đọc AI Neural (HoaiMy/NamMinh Natural) + Google Cloud TTS & Âm thanh Phù Thủy tách biệt
 window.AudioEngine = (() => {
   let ctx = null;
   let voiceEnabled = true;
   let sfxEnabled = true;
-  let speechRate = 1.05;
-  let ttsMode = 'cloud'; // 'cloud' | 'browser'
+  let speechRate = 1.02;
+  let speechPitch = 1.0;
+  let ttsMode = 'auto_neural'; // 'auto_neural' | 'cloud' | 'browser'
   let selectedVoiceURI = '';
   let voices = [];
   let currentSpeakToken = 0;
@@ -35,6 +36,17 @@ window.AudioEngine = (() => {
     }
   }
 
+  function findBestNeuralVietnameseVoice(list) {
+    const viList = (list || []).filter((v) => v.lang && v.lang.toLowerCase().startsWith('vi'));
+    if (!viList.length) return null;
+    return (
+      viList.find((v) => /hoaimy.*natural|namminh.*natural/i.test(v.name)) ||
+      viList.find((v) => /natural|neural/i.test(v.name)) ||
+      viList.find((v) => /online/i.test(v.name)) ||
+      null
+    );
+  }
+
   function loadVoices() {
     if (!('speechSynthesis' in window)) return [];
     const list = window.speechSynthesis.getVoices() || [];
@@ -42,8 +54,7 @@ window.AudioEngine = (() => {
       voices = list;
       if (!selectedVoiceURI) {
         const viVoice =
-          list.find((v) => v.lang.toLowerCase().startsWith('vi') && v.name.toLowerCase().includes('natural')) ||
-          list.find((v) => v.lang.toLowerCase().startsWith('vi') && v.name.toLowerCase().includes('online')) ||
+          findBestNeuralVietnameseVoice(list) ||
           list.find((v) => v.lang.toLowerCase().startsWith('vi') && v.name.toLowerCase().includes('google')) ||
           list.find((v) => v.lang.toLowerCase().startsWith('vi')) ||
           list[0];
@@ -66,12 +77,13 @@ window.AudioEngine = (() => {
     return voices;
   }
 
-  function setConfig({ voice, sfx, rate, voiceURI, mode }) {
+  function setConfig({ voice, sfx, rate, pitch, voiceURI, mode }) {
     if (typeof voice === 'boolean') voiceEnabled = voice;
     if (typeof sfx === 'boolean') sfxEnabled = sfx;
     if (typeof rate === 'number') speechRate = Math.min(1.5, Math.max(0.7, rate));
+    if (typeof pitch === 'number') speechPitch = Math.min(1.2, Math.max(0.8, pitch));
     if (typeof voiceURI === 'string') selectedVoiceURI = voiceURI;
-    if (mode === 'cloud' || mode === 'browser') ttsMode = mode;
+    if (mode === 'auto_neural' || mode === 'cloud' || mode === 'browser') ttsMode = mode;
   }
 
   function getConfig() {
@@ -79,8 +91,10 @@ window.AudioEngine = (() => {
       voice: voiceEnabled,
       sfx: sfxEnabled,
       rate: speechRate,
+      pitch: speechPitch,
       voiceURI: selectedVoiceURI,
-      mode: ttsMode
+      mode: ttsMode,
+      hasNeuralVoice: Boolean(findBestNeuralVietnameseVoice(getVoices()))
     };
   }
 
@@ -153,11 +167,12 @@ window.AudioEngine = (() => {
     const utter = new SpeechSynthesisUtterance(text);
     utter.lang = 'vi-VN';
     utter.rate = speechRate;
-    utter.pitch = 1.0;
+    utter.pitch = speechPitch;
 
     const available = getVoices();
     const chosen =
       available.find((v) => v.voiceURI === selectedVoiceURI) ||
+      findBestNeuralVietnameseVoice(available) ||
       available.find((v) => v.lang.toLowerCase().startsWith('vi'));
     if (chosen) {
       utter.voice = chosen;
@@ -212,8 +227,8 @@ window.AudioEngine = (() => {
       handled = true;
       clearTimeout(guardTimer);
       currentAudioEl = null;
-      // Nhịp nghỉ tự nhiên giữa các câu
-      setTimeout(() => playCloudChunks(chunks, index + 1, token, onDone), 140);
+      // Nhịp nghỉ kể chuyện tự nhiên giữa các câu
+      setTimeout(() => playCloudChunks(chunks, index + 1, token, onDone), 180);
     };
 
     audio.onerror = () => {
@@ -251,7 +266,16 @@ window.AudioEngine = (() => {
     }
 
     emitSpeakState(true);
-    if (ttsMode === 'cloud') {
+    const availableVoices = getVoices();
+    const neuralVoice = findBestNeuralVietnameseVoice(availableVoices);
+
+    // Chế độ auto_neural: ưu tiên Microsoft HoaiMy/NamMinh Natural (Edge AI Neural), nếu không có thì dùng Cloud AI
+    if (ttsMode === 'auto_neural' && neuralVoice) {
+      speakWithWebSpeech(text, token, done);
+      return;
+    }
+
+    if (ttsMode === 'cloud' || ttsMode === 'auto_neural') {
       const chunks = splitIntoChunks(text, 150);
       if (chunks.length > 0) {
         playCloudChunks(chunks, 0, token, done);
@@ -282,33 +306,10 @@ window.AudioEngine = (() => {
   }
 
   function playWolfHowl() {
+    // Tắt tiếng sói hú đáng sợ: thay bằng 2 nốt chuông đêm êm dịu
     if (!sfxEnabled) return;
-    const ac = ensureContext();
-    if (!ac) return;
-    const now = ac.currentTime;
-    const osc = ac.createOscillator();
-    const gain = ac.createGain();
-    osc.type = 'sawtooth';
-
-    const filter = ac.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(650, now);
-
-    osc.frequency.setValueAtTime(220, now);
-    osc.frequency.exponentialRampToValueAtTime(440, now + 0.45);
-    osc.frequency.exponentialRampToValueAtTime(360, now + 1.1);
-    osc.frequency.exponentialRampToValueAtTime(190, now + 1.85);
-
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.18, now + 0.3);
-    gain.gain.exponentialRampToValueAtTime(0.12, now + 1.1);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 1.9);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(ac.destination);
-    osc.start(now);
-    osc.stop(now + 1.95);
+    playTone(392.0, 0.28, 'sine', 0.12, 0);
+    playTone(523.25, 0.36, 'sine', 0.11, 0.14);
   }
 
   function playRoosterDawn() {
@@ -334,8 +335,73 @@ window.AudioEngine = (() => {
 
   function playWitchPotion() {
     if (!sfxEnabled) return;
-    [440, 554, 659, 880].forEach((f, idx) => {
-      playTone(f, 0.22, 'sine', 0.14, idx * 0.08);
+    [392, 493.88, 587.33].forEach((f, idx) => {
+      playTone(f, 0.2, 'sine', 0.12, idx * 0.09);
+    });
+  }
+
+  // Âm thanh Phù Thủy dùng Bình Cứu (ấm áp, trong trẻo hồi sinh)
+  function playWitchSave() {
+    if (!sfxEnabled) return;
+    const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5];
+    notes.forEach((f, idx) => {
+      playTone(f, 0.34, 'triangle', 0.18, idx * 0.085);
+      playTone(f * 1.5, 0.25, 'sine', 0.08, idx * 0.085 + 0.03);
+    });
+  }
+
+  // Âm thanh Phù Thủy ném Bình Độc (vỡ thủy tinh + tiếng độc dược sủi bọt)
+  function playWitchPoison() {
+    if (!sfxEnabled) return;
+    const ac = ensureContext();
+    if (!ac) return;
+    const now = ac.currentTime;
+
+    // 1. Tiếng thủy tinh vỡ (noise burst lọc cao)
+    [0, 0.06, 0.12].forEach((offset, idx) => {
+      const len = Math.floor(ac.sampleRate * 0.09);
+      const buf = ac.createBuffer(1, len, ac.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ac.sampleRate * 0.025));
+      }
+      const src = ac.createBufferSource();
+      src.buffer = buf;
+      const bp = ac.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.setValueAtTime(2400 + idx * 900, now + offset);
+      bp.Q.setValueAtTime(2.5, now + offset);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.32, now + offset);
+      g.gain.exponentialRampToValueAtTime(0.001, now + offset + 0.085);
+      src.connect(bp);
+      bp.connect(g);
+      g.connect(ac.destination);
+      src.start(now + offset);
+    });
+
+    // 2. Tiếng độc dược sủi bọt trượt trầm
+    const osc = ac.createOscillator();
+    const lp = ac.createBiquadFilter();
+    const gain = ac.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(380, now + 0.08);
+    osc.frequency.exponentialRampToValueAtTime(95, now + 0.72);
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(900, now + 0.08);
+    lp.frequency.exponentialRampToValueAtTime(240, now + 0.72);
+    gain.gain.setValueAtTime(0.001, now + 0.08);
+    gain.gain.linearRampToValueAtTime(0.22, now + 0.14);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.75);
+    osc.connect(lp);
+    lp.connect(gain);
+    gain.connect(ac.destination);
+    osc.start(now + 0.08);
+    osc.stop(now + 0.78);
+
+    // 3. Tiếng bong bóng độc
+    [0.18, 0.3, 0.44].forEach((delay, i) => {
+      playTone(320 - i * 45, 0.12, 'sine', 0.16, delay);
     });
   }
 
@@ -388,6 +454,8 @@ window.AudioEngine = (() => {
     playRoosterDawn,
     playHeartbeat,
     playWitchPotion,
+    playWitchSave,
+    playWitchPoison,
     playHunterShot,
     playVoteGavel,
     playVictory,

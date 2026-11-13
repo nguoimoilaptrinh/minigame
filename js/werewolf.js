@@ -1,4 +1,4 @@
-// Game 1: Ma Sói v2.2 — Bot Quản Trò tối giản, Fix logic Sói & Vai trò, Avatar & Thẻ bài 3D
+// Game 1: Ma Sói v2.4 — 11 Vai Trò, Tắt Tiếng Sói Hú, QR & Avatar Lớn, Thẻ Bài 3D Nhấn & Giữ
 window.WerewolfGame = (() => {
   const { WEREWOLF_ROLES, getRecommendedWerewolfRoles, getRandomAvatarId } = window.GameData;
 
@@ -7,8 +7,9 @@ window.WerewolfGame = (() => {
   let myName = '';
   let myAvatarId = '';
   let state = null;
-  let clientSecret = null; // { roleId, teammates: [] }
+  let clientSecret = null; // { roleId, teammates: [], loverInfo: null }
   let witchInfo = null;
+  let alphaInfo = null;
   let seerResult = null;
   let wolfPeersChoices = {}; // { wolfId: targetId }
   let wolfConfirmedMap = {}; // { wolfId: boolean }
@@ -17,13 +18,25 @@ window.WerewolfGame = (() => {
 
   // Host-only timers & guards
   let hostStepTimer = null;
+  let joinTimers = [];
   let stepResolved = false;
   let autoRolesMode = true;
   let demoCounter = 1;
   let selectedNightTarget = null;
+  let selectedCupidTargets = [];
   let witchSaveChoice = false;
   let witchPoisonChoice = null;
   let voteAllAnnounced = false;
+
+  function isWolfRole(roleId) {
+    return roleId === 'werewolf' || roleId === 'alpha_wolf';
+  }
+
+  function getPlayerSide(roleId) {
+    if (isWolfRole(roleId)) return 'werewolf';
+    if (roleId === 'jester' || roleId === 'serial_killer') return roleId;
+    return 'villager';
+  }
 
   function clearHostTimers() {
     if (hostStepTimer) {
@@ -42,16 +55,23 @@ window.WerewolfGame = (() => {
       players: [], // { id, name, avatarId, ready, alive, isDemo, roleId (host-only) }
       rolesConfig: getRecommendedWerewolfRoles(5),
       lastGuardedId: null,
+      seerHistory: [],
+      lovers: [], // [id1, id2]
+      alphaWolfConvertUsed: false,
+      elderLivesMap: {},
       witchPotions: { save: true, poison: true },
       nightActions: {
+        cupidTargets: [],
         guardTarget: null,
         wolfVotes: {},
         wolfConfirmed: {},
         wolfTarget: null,
+        alphaConvert: false,
         seerTarget: null,
         seerInspected: false,
         witchSave: false,
-        witchPoisonTarget: null
+        witchPoisonTarget: null,
+        serialKillerTarget: null
       },
       dayVotes: {}, // { voterId: targetId | '__skip__' }
       pendingHunterId: null,
@@ -73,11 +93,14 @@ window.WerewolfGame = (() => {
       nightStep: s.nightStep,
       rolesConfig: s.rolesConfig,
       lastGuardedId: s.lastGuardedId,
+      seerHistory: s.seerHistory || [],
       dayVotes: s.dayVotes,
       pendingHunterId: s.pendingHunterId,
       botText: s.botText,
       lastDawnSummary: s.lastDawnSummary,
       winner: s.winner,
+      lovers: revealAll ? s.lovers || [] : [],
+      alphaWolfConvertUsed: Boolean(s.alphaWolfConvertUsed),
       logs: s.logs,
       players: s.players.map((p) => ({
         id: p.id,
@@ -98,14 +121,26 @@ window.WerewolfGame = (() => {
   }
 
   function sendSecretToPlayer(player) {
-    if (!isHost || !session || !player.roleId) return;
-    const teammates =
-      player.roleId === 'werewolf'
-        ? state.players
-            .filter((p) => p.roleId === 'werewolf' && p.id !== player.id)
-            .map((p) => ({ id: p.id, name: p.name, alive: p.alive }))
-        : [];
-    session.send('WW_SECRET', { roleId: player.roleId, teammates }, player.id);
+    if (!isHost || !session || !player || !player.roleId || player.isDemo) return;
+    const teammates = isWolfRole(player.roleId)
+      ? state.players
+          .filter((p) => isWolfRole(p.roleId) && p.id !== player.id)
+          .map((p) => ({ id: p.id, name: p.name, alive: p.alive }))
+      : [];
+    let loverInfo = null;
+    if (Array.isArray(state.lovers) && state.lovers.length === 2 && state.lovers.includes(player.id)) {
+      const partnerId = state.lovers.find((id) => id !== player.id);
+      const partner = state.players.find((p) => p.id === partnerId);
+      if (partner) {
+        loverInfo = {
+          id: partner.id,
+          name: partner.name,
+          alive: partner.alive,
+          roleName: WEREWOLF_ROLES[partner.roleId]?.name || '?'
+        };
+      }
+    }
+    session.send('WW_SECRET', { roleId: player.roleId, teammates, loverInfo }, player.id);
   }
 
   function addLog(text) {
@@ -149,11 +184,13 @@ window.WerewolfGame = (() => {
     myAvatarId = playerAvatarId || window.AppUI.getSavedAvatarId();
     clientSecret = null;
     witchInfo = null;
+    alphaInfo = null;
     seerResult = null;
     wolfPeersChoices = {};
     wolfConfirmedMap = {};
     cardRevealed = false;
     selectedNightTarget = null;
+    selectedCupidTargets = [];
     lastReceivedSeq = -1;
 
     state = createInitialHostState(roomCode);
@@ -177,12 +214,14 @@ window.WerewolfGame = (() => {
     renderPlayer();
 
     announceJoin();
-    setTimeout(announceJoin, 900);
-    setTimeout(announceJoin, 2400);
+    joinTimers.push(setTimeout(announceJoin, 900));
+    joinTimers.push(setTimeout(announceJoin, 2400));
   }
 
   function cleanup() {
     clearHostTimers();
+    joinTimers.forEach((t) => clearTimeout(t));
+    joinTimers = [];
     window.AudioEngine.stopSpeech();
     if (session) {
       session.destroy();
@@ -215,6 +254,9 @@ window.WerewolfGame = (() => {
             if (state.phase === 'NIGHT' && state.nightStep === 'witch' && byName.roleId === 'witch' && byName.alive) {
               sendWitchInfoTo(byName);
             }
+            if (state.phase === 'NIGHT' && state.nightStep === 'alpha_wolf' && byName.roleId === 'alpha_wolf' && byName.alive) {
+              sendAlphaInfoTo(byName);
+            }
           }
           return;
         }
@@ -241,6 +283,9 @@ window.WerewolfGame = (() => {
         sendSecretToPlayer(player);
         if (state.phase === 'NIGHT' && state.nightStep === 'witch' && player.roleId === 'witch' && player.alive) {
           sendWitchInfoTo(player);
+        }
+        if (state.phase === 'NIGHT' && state.nightStep === 'alpha_wolf' && player.roleId === 'alpha_wolf' && player.alive) {
+          sendAlphaInfoTo(player);
         }
       }
       renderHost();
@@ -333,15 +378,20 @@ window.WerewolfGame = (() => {
       [pool[i], pool[j]] = [pool[j], pool[i]];
     }
 
+    state.elderLivesMap = {};
     state.players.forEach((p, idx) => {
       p.roleId = pool[idx];
       p.alive = true;
+      if (p.roleId === 'elder') state.elderLivesMap[p.id] = 2;
     });
 
     state.phase = 'ROLE_REVEAL';
     state.nightNumber = 0;
     state.nightStep = null;
     state.lastGuardedId = null;
+    state.seerHistory = [];
+    state.lovers = [];
+    state.alphaWolfConvertUsed = false;
     state.witchPotions = { save: true, poison: true };
     state.dayVotes = {};
     state.pendingHunterId = null;
@@ -358,7 +408,7 @@ window.WerewolfGame = (() => {
     renderHost();
 
     setBotSpeech(
-      'Trò chơi Ma Sói bắt đầu! Mọi người hãy chạm vào thẻ bài trên điện thoại để xem vai trò bí mật của mình nhé.',
+      'Trò chơi Ma Sói bắt đầu! Mọi người hãy nhấn và giữ thẻ bài trên điện thoại để xem vai trò bí mật của mình nhé.',
       () => {
         hostStepTimer = setTimeout(() => {
           if (state && state.phase === 'ROLE_REVEAL') {
@@ -378,14 +428,17 @@ window.WerewolfGame = (() => {
     voteAllAnnounced = false;
     stepResolved = false;
     state.nightActions = {
+      cupidTargets: [],
       guardTarget: null,
       wolfVotes: {},
       wolfConfirmed: {},
       wolfTarget: null,
+      alphaConvert: false,
       seerTarget: null,
       seerInspected: false,
       witchSave: false,
-      witchPoisonTarget: null
+      witchPoisonTarget: null,
+      serialKillerTarget: null
     };
 
     window.AudioEngine.playNightAmbience();
@@ -402,10 +455,13 @@ window.WerewolfGame = (() => {
 
   function getActiveNightOrder() {
     const order = [];
+    if (state.nightNumber === 1 && (state.rolesConfig.cupid || 0) > 0) order.push('cupid');
     if ((state.rolesConfig.guard || 0) > 0) order.push('guard');
     order.push('werewolf');
+    if ((state.rolesConfig.alpha_wolf || 0) > 0 && !state.alphaWolfConvertUsed) order.push('alpha_wolf');
     if ((state.rolesConfig.seer || 0) > 0) order.push('seer');
     if ((state.rolesConfig.witch || 0) > 0) order.push('witch');
+    if ((state.rolesConfig.serial_killer || 0) > 0) order.push('serial_killer');
     return order;
   }
 
@@ -427,10 +483,50 @@ window.WerewolfGame = (() => {
     syncStateToClients();
     renderHost();
 
-    if (nextStep === 'guard') runGuardStep();
+    if (nextStep === 'cupid') runCupidStep();
+    else if (nextStep === 'guard') runGuardStep();
     else if (nextStep === 'werewolf') runWerewolfStep();
+    else if (nextStep === 'alpha_wolf') runAlphaWolfStep();
     else if (nextStep === 'seer') runSeerStep();
     else if (nextStep === 'witch') runWitchStep();
+    else if (nextStep === 'serial_killer') runSerialKillerStep();
+  }
+
+  function runCupidStep() {
+    const aliveCupid = state.players.find((p) => p.alive && p.roleId === 'cupid');
+    setBotSpeech('Thần Tình Yêu ơi, hãy mở mắt dậy và chọn 2 người để ghép thành Cặp Đôi Tình Nhân!', () => {
+      if (!aliveCupid) {
+        hostStepTimer = setTimeout(() => finishCupidStep([]), 3200);
+      } else if (aliveCupid.isDemo) {
+        const pool = [...state.players].filter((p) => p.alive);
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        const pair = pool.length >= 2 ? [pool[0].id, pool[1].id] : [];
+        hostStepTimer = setTimeout(() => finishCupidStep(pair), 1600);
+      }
+    });
+  }
+
+  function finishCupidStep(targetIds) {
+    if (stepResolved || !state || state.phase !== 'NIGHT' || state.nightStep !== 'cupid') return;
+    stepResolved = true;
+    clearHostTimers();
+    const valid = Array.isArray(targetIds)
+      ? [...new Set(targetIds)].filter((id) => state.players.some((p) => p.id === id && p.alive)).slice(0, 2)
+      : [];
+    if (valid.length === 2) {
+      state.lovers = valid;
+      state.nightActions.cupidTargets = valid;
+      valid.forEach((id) => {
+        const lp = state.players.find((p) => p.id === id);
+        if (lp) sendSecretToPlayer(lp);
+      });
+    }
+    setBotSpeech('Thần Tình Yêu đã se duyên xong. Xin mời Thần Tình Yêu nhắm mắt lại.', () => {
+      hostStepTimer = setTimeout(() => advanceNightStep(), 900);
+    });
   }
 
   function runGuardStep() {
@@ -458,11 +554,10 @@ window.WerewolfGame = (() => {
   }
 
   function runWerewolfStep() {
-    window.AudioEngine.playWolfHowl();
-    const aliveWolves = state.players.filter((p) => p.alive && p.roleId === 'werewolf');
+    const aliveWolves = state.players.filter((p) => p.alive && isWolfRole(p.roleId));
     setBotSpeech('Ma Sói ơi, hãy mở mắt dậy và chọn con mồi đêm nay!', () => {
       if (aliveWolves.length > 0 && aliveWolves.every((w) => w.isDemo)) {
-        const prey = state.players.filter((p) => p.alive && p.roleId !== 'werewolf');
+        const prey = state.players.filter((p) => p.alive && !isWolfRole(p.roleId));
         const pick = prey[Math.floor(Math.random() * prey.length)];
         hostStepTimer = setTimeout(() => finishWerewolfStep(pick ? pick.id : null), 1800);
       }
@@ -471,7 +566,7 @@ window.WerewolfGame = (() => {
 
   function pickMajorityWolfTarget(lastTargetId) {
     const isValidPrey = (id) =>
-      Boolean(id) && state.players.some((p) => p.id === id && p.alive && p.roleId !== 'werewolf');
+      Boolean(id) && state.players.some((p) => p.id === id && p.alive && !isWolfRole(p.roleId));
     const tally = {};
     Object.values(state.nightActions.wolfVotes || {}).forEach((tId) => {
       if (isValidPrey(tId)) tally[tId] = (tally[tId] || 0) + 1;
@@ -487,6 +582,46 @@ window.WerewolfGame = (() => {
     clearHostTimers();
     state.nightActions.wolfTarget = targetId;
     setBotSpeech('Ma Sói đã chọn xong con mồi. Xin mời Ma Sói nhắm mắt lại.', () => {
+      hostStepTimer = setTimeout(() => advanceNightStep(), 900);
+    });
+  }
+
+  function sendAlphaInfoTo(alphaPlayer) {
+    const victimId = state.nightActions.wolfTarget;
+    const victim = victimId ? state.players.find((p) => p.id === victimId) : null;
+    session.send(
+      'WW_ALPHA_INFO',
+      {
+        victimId: victim ? victim.id : null,
+        victimName: victim ? victim.name : null,
+        canConvert: !state.alphaWolfConvertUsed && Boolean(victim)
+      },
+      alphaPlayer.id
+    );
+  }
+
+  function runAlphaWolfStep() {
+    const aliveAlpha = state.players.find((p) => p.alive && p.roleId === 'alpha_wolf');
+    if (aliveAlpha && !aliveAlpha.isDemo) {
+      sendAlphaInfoTo(aliveAlpha);
+    }
+    setBotSpeech('Sói Đầu Đàn ơi, bạn có muốn dùng quyền Nguyền biến nạn nhân đêm nay thành Ma Sói không?', () => {
+      if (!aliveAlpha || state.alphaWolfConvertUsed || !state.nightActions.wolfTarget) {
+        hostStepTimer = setTimeout(() => finishAlphaWolfStep(false), 2600);
+      } else if (aliveAlpha.isDemo) {
+        hostStepTimer = setTimeout(() => finishAlphaWolfStep(false), 1600);
+      }
+    });
+  }
+
+  function finishAlphaWolfStep(convert) {
+    if (stepResolved || !state || state.phase !== 'NIGHT' || state.nightStep !== 'alpha_wolf') return;
+    stepResolved = true;
+    clearHostTimers();
+    if (convert && !state.alphaWolfConvertUsed && state.nightActions.wolfTarget) {
+      state.nightActions.alphaConvert = true;
+    }
+    setBotSpeech('Sói Đầu Đàn đã quyết định xong. Xin mời Sói Đầu Đàn nhắm mắt lại.', () => {
       hostStepTimer = setTimeout(() => advanceNightStep(), 900);
     });
   }
@@ -545,15 +680,52 @@ window.WerewolfGame = (() => {
     if (stepResolved || !state || state.phase !== 'NIGHT' || state.nightStep !== 'witch') return;
     stepResolved = true;
     clearHostTimers();
+    let didSave = false;
+    let didPoison = false;
     if (useSave && state.witchPotions.save) {
       state.nightActions.witchSave = true;
       state.witchPotions.save = false;
+      didSave = true;
     }
     if (poisonTargetId && state.witchPotions.poison) {
       state.nightActions.witchPoisonTarget = poisonTargetId;
       state.witchPotions.poison = false;
+      didPoison = true;
     }
+
+    if (didSave && didPoison) {
+      window.AudioEngine.playWitchSave();
+      setTimeout(() => window.AudioEngine.playWitchPoison(), 600);
+    } else if (didSave) {
+      window.AudioEngine.playWitchSave();
+    } else if (didPoison) {
+      window.AudioEngine.playWitchPoison();
+    }
+
     setBotSpeech('Phù Thủy đã hành động xong. Xin mời Phù Thủy nhắm mắt lại.', () => {
+      hostStepTimer = setTimeout(() => advanceNightStep(), 900);
+    });
+  }
+
+  function runSerialKillerStep() {
+    const aliveSK = state.players.find((p) => p.alive && p.roleId === 'serial_killer');
+    setBotSpeech('Sát Nhân Độc Hành ơi, hãy mở mắt dậy và chọn 1 mục tiêu để ám sát đêm nay.', () => {
+      if (!aliveSK) {
+        hostStepTimer = setTimeout(() => finishSerialKillerStep(null), 3500);
+      } else if (aliveSK.isDemo) {
+        const candidates = state.players.filter((p) => p.alive && p.id !== aliveSK.id);
+        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        hostStepTimer = setTimeout(() => finishSerialKillerStep(pick ? pick.id : null), 1600);
+      }
+    });
+  }
+
+  function finishSerialKillerStep(targetId) {
+    if (stepResolved || !state || state.phase !== 'NIGHT' || state.nightStep !== 'serial_killer') return;
+    stepResolved = true;
+    clearHostTimers();
+    state.nightActions.serialKillerTarget = targetId || null;
+    setBotSpeech('Sát Nhân đã chọn xong mục tiêu. Xin mời Sát Nhân nhắm mắt lại.', () => {
       hostStepTimer = setTimeout(() => advanceNightStep(), 900);
     });
   }
@@ -563,6 +735,13 @@ window.WerewolfGame = (() => {
     if (!player) return;
 
     if (state.phase === 'NIGHT') {
+      if (state.nightStep === 'cupid' && payload.step === 'cupid' && player.alive && player.roleId === 'cupid') {
+        const list = Array.isArray(payload.targetIds) ? payload.targetIds : [];
+        if (list.length !== 2 || list[0] === list[1]) return;
+        finishCupidStep(list);
+        return;
+      }
+
       if (state.nightStep === 'guard' && payload.step === 'guard' && player.alive && player.roleId === 'guard') {
         const tId = payload.targetId || null;
         if (tId) {
@@ -573,16 +752,16 @@ window.WerewolfGame = (() => {
         return;
       }
 
-      if (state.nightStep === 'werewolf' && payload.step === 'werewolf' && player.alive && player.roleId === 'werewolf') {
+      if (state.nightStep === 'werewolf' && payload.step === 'werewolf' && player.alive && isWolfRole(player.roleId)) {
         const prey = state.players.find(
-          (p) => p.id === payload.targetId && p.alive && p.roleId !== 'werewolf'
+          (p) => p.id === payload.targetId && p.alive && !isWolfRole(p.roleId)
         );
         if (!prey) return;
 
         state.nightActions.wolfVotes[senderId] = prey.id;
         if (payload.confirm) state.nightActions.wolfConfirmed[senderId] = true;
 
-        const aliveWolves = state.players.filter((p) => p.alive && p.roleId === 'werewolf' && !p.isDemo);
+        const aliveWolves = state.players.filter((p) => p.alive && isWolfRole(p.roleId) && !p.isDemo);
         aliveWolves.forEach((w) => {
           session.send(
             'WW_WOLF_SYNC',
@@ -603,21 +782,35 @@ window.WerewolfGame = (() => {
         return;
       }
 
+      if (
+        state.nightStep === 'alpha_wolf' &&
+        payload.step === 'alpha_wolf' &&
+        player.alive &&
+        player.roleId === 'alpha_wolf'
+      ) {
+        finishAlphaWolfStep(Boolean(payload.convert));
+        return;
+      }
+
       if (state.nightStep === 'seer' && payload.step === 'seer' && player.alive && player.roleId === 'seer') {
         if (payload.action === 'inspect' && payload.targetId) {
           if (state.nightActions.seerInspected) return;
+          if (!Array.isArray(state.seerHistory)) state.seerHistory = [];
+          if (state.seerHistory.includes(payload.targetId)) return;
           const target = state.players.find(
             (p) => p.id === payload.targetId && p.alive && p.id !== senderId
           );
           if (target) {
             state.nightActions.seerInspected = true;
             state.nightActions.seerTarget = target.id;
+            state.seerHistory.push(target.id);
+            syncStateToClients();
             session.send(
               'WW_SEER_RESULT',
               {
                 targetId: target.id,
                 targetName: target.name,
-                isWolf: target.roleId === 'werewolf'
+                isWolf: isWolfRole(target.roleId)
               },
               player.id
             );
@@ -640,6 +833,17 @@ window.WerewolfGame = (() => {
         finishWitchStep(wantSave, poisonId);
         return;
       }
+
+      if (
+        state.nightStep === 'serial_killer' &&
+        payload.step === 'serial_killer' &&
+        player.alive &&
+        player.roleId === 'serial_killer'
+      ) {
+        const target = state.players.find((p) => p.id === payload.targetId && p.alive && p.id !== senderId);
+        finishSerialKillerStep(target ? target.id : null);
+        return;
+      }
     }
 
     if (state.phase === 'HUNTER_REVENGE' && payload.step === 'hunter' && senderId === state.pendingHunterId) {
@@ -652,16 +856,64 @@ window.WerewolfGame = (() => {
     }
   }
 
+  function applyLoversChainDeath(newlyDeadList) {
+    if (!Array.isArray(state.lovers) || state.lovers.length !== 2) return [];
+    const chainDead = [];
+    const [idA, idB] = state.lovers;
+    const pA = state.players.find((p) => p.id === idA);
+    const pB = state.players.find((p) => p.id === idB);
+    if (!pA || !pB) return [];
+
+    if (!pA.alive && pB.alive) {
+      pB.alive = false;
+      chainDead.push({ partner: pB, diedFor: pA });
+    } else if (!pB.alive && pA.alive) {
+      pA.alive = false;
+      chainDead.push({ partner: pA, diedFor: pB });
+    }
+    chainDead.forEach(({ partner, diedFor }) => {
+      newlyDeadList.push(partner);
+      addLog(`💔 ${partner.name} đã chết theo người yêu ${diedFor.name} vì tình!`);
+    });
+    return chainDead;
+  }
+
   function resolveNightAndStartDay() {
     clearHostTimers();
-    const { guardTarget, wolfTarget, witchSave, witchPoisonTarget } = state.nightActions;
+    const { guardTarget, wolfTarget, alphaConvert, witchSave, witchPoisonTarget, serialKillerTarget } =
+      state.nightActions;
 
     const deadIds = [];
-    if (wolfTarget && wolfTarget !== guardTarget && !witchSave) {
-      deadIds.push(wolfTarget);
+    let elderSurvivedHint = false;
+
+    if (alphaConvert && wolfTarget && wolfTarget !== guardTarget) {
+      const converted = state.players.find((p) => p.id === wolfTarget && p.alive);
+      if (converted) {
+        converted.roleId = 'werewolf';
+        state.alphaWolfConvertUsed = true;
+        addLog(`🩸 Đêm ${state.nightNumber}: Sói Đầu Đàn đã nguyền hóa 1 nạn nhân gia nhập bầy Sói!`);
+        state.players.forEach((p) => {
+          if (p.id === converted.id || isWolfRole(p.roleId)) {
+            sendSecretToPlayer(p);
+          }
+        });
+      }
+    } else if (wolfTarget && wolfTarget !== guardTarget && !witchSave) {
+      const wolfVictim = state.players.find((p) => p.id === wolfTarget && p.alive);
+      if (wolfVictim && wolfVictim.roleId === 'elder' && (state.elderLivesMap[wolfVictim.id] || 0) > 1) {
+        state.elderLivesMap[wolfVictim.id] = 1;
+        elderSurvivedHint = true;
+        addLog(`🧓 Ngày ${state.nightNumber}: Già Làng bị Sói cắn nhưng nhờ lớp giáp đầu tiên vẫn bình an!`);
+      } else {
+        deadIds.push(wolfTarget);
+      }
     }
+
     if (witchPoisonTarget && !deadIds.includes(witchPoisonTarget)) {
       deadIds.push(witchPoisonTarget);
+    }
+    if (serialKillerTarget && serialKillerTarget !== guardTarget && !deadIds.includes(serialKillerTarget)) {
+      deadIds.push(serialKillerTarget);
     }
 
     const deadPlayers = [];
@@ -673,17 +925,25 @@ window.WerewolfGame = (() => {
       }
     });
 
+    const loverDeaths = applyLoversChainDeath(deadPlayers);
+
     window.AudioEngine.playRoosterDawn();
 
     let announcement = '';
     if (deadPlayers.length === 0) {
       announcement = `Trời sáng rồi, xin mời mọi người mở mắt ra! Đêm qua là một đêm bình yên, không có ai thiệt mạng.`;
-      state.lastDawnSummary = '☀️ Đêm qua bình yên — Không có ai thiệt mạng.';
+      state.lastDawnSummary = elderSurvivedHint
+        ? '☀️ Đêm qua bình yên (Có người vừa thoát chết trong gang tấc!).'
+        : '☀️ Đêm qua bình yên — Không có ai thiệt mạng.';
       addLog(`Ngày ${state.nightNumber}: Đêm qua bình yên.`);
     } else {
       const names = deadPlayers.map((p) => p.name).join(', ');
-      announcement = `Trời sáng rồi, xin mời mọi người mở mắt ra! Đêm qua có ${deadPlayers.length} người đã thiệt mạng, đó là: ${names}!`;
-      state.lastDawnSummary = `💀 Đêm qua có ${deadPlayers.length} người thiệt mạng: ${names}.`;
+      const loverExtra =
+        loverDeaths.length > 0
+          ? ` Trong đó ${loverDeaths.map((d) => `${d.partner.name} chết theo người yêu ${d.diedFor.name}`).join('; ')}.`
+          : '';
+      announcement = `Trời sáng rồi, xin mời mọi người mở mắt ra! Đêm qua có ${deadPlayers.length} người đã thiệt mạng, đó là: ${names}!${loverExtra}`;
+      state.lastDawnSummary = `💀 Đêm qua có ${deadPlayers.length} người thiệt mạng: ${names}.${loverExtra}`;
       addLog(`Ngày ${state.nightNumber}: ${names} đã thiệt mạng trong đêm.`);
     }
 
@@ -736,11 +996,18 @@ window.WerewolfGame = (() => {
         window.AudioEngine.playHunterShot();
         addLog(`🏹 Thợ Săn ${hunter ? hunter.name : ''} đã bắn hạ ${target.name}!`);
         state.lastDawnSummary += ` 🏹 Thợ Săn bắn hạ ${target.name}.`;
+        const chainList = [];
+        const chained = applyLoversChainDeath(chainList);
+        const chainMsg =
+          chained.length > 0 ? ` ${chained.map((d) => `${d.partner.name} cũng chết theo vì tình!`).join(' ')}` : '';
         syncStateToClients();
         renderHost();
-        setBotSpeech(`Đoàng! Thợ Săn ${hunter ? hunter.name : ''} đã bắn hạ ${target.name} trước khi ngã xuống!`, () => {
-          afterHunterResolved(nextAfter);
-        });
+        setBotSpeech(
+          `Đoàng! Thợ Săn ${hunter ? hunter.name : ''} đã bắn hạ ${target.name} trước khi ngã xuống!${chainMsg}`,
+          () => {
+            afterHunterResolved(nextAfter);
+          }
+        );
         return;
       }
     }
@@ -775,13 +1042,31 @@ window.WerewolfGame = (() => {
     state.dayVotes = {};
     addLog(`⚖️ Cả làng đã biểu quyết treo cổ ${target.name}.`);
 
+    // Phe Thứ 3 (Thằng Ngố / Kẻ Chán Đời): bị treo cổ ban ngày -> thắng ngay lập tức!
+    if (target.roleId === 'jester') {
+      state.phase = 'GAME_OVER';
+      state.winner = 'jester';
+      window.AudioEngine.playVictory();
+      const winMsg = `Trời ơi! ${target.name} chính là Thằng Ngố (Kẻ Chán Đời)! Cả làng đã bị lừa treo cổ và Phe Thứ 3 giành chiến thắng độc lập!`;
+      addLog(`🃏 ${winMsg}`);
+      syncStateToClients();
+      renderHost();
+      setBotSpeech(winMsg);
+      return;
+    }
+
+    const chainList = [];
+    const chained = applyLoversChainDeath(chainList);
+    const chainMsg =
+      chained.length > 0 ? ` 💔 ${chained.map((d) => `${d.partner.name} cũng chết theo vì tình!`).join(' ')}` : '';
+
     if (target.roleId === 'hunter') {
       state.phase = 'HUNTER_REVENGE';
       state.pendingHunterId = target.id;
       state.pendingHunterNext = 'NEXT_NIGHT';
       syncStateToClients();
       renderHost();
-      setBotSpeech(`Cả làng đã biểu quyết treo cổ ${target.name}!`, () => {
+      setBotSpeech(`Cả làng đã biểu quyết treo cổ ${target.name}!${chainMsg}`, () => {
         triggerHunterPrompt(target);
       });
       return;
@@ -789,7 +1074,7 @@ window.WerewolfGame = (() => {
 
     syncStateToClients();
     renderHost();
-    setBotSpeech(`Cả làng đã biểu quyết treo cổ ${target.name}!`, () => {
+    setBotSpeech(`Cả làng đã biểu quyết treo cổ ${target.name}!${chainMsg}`, () => {
       if (!checkWinCondition()) {
         hostStepTimer = setTimeout(() => beginNextNight(), 1400);
       }
@@ -807,12 +1092,31 @@ window.WerewolfGame = (() => {
   }
 
   function checkWinCondition() {
-    const aliveWolves = state.players.filter((p) => p.alive && p.roleId === 'werewolf').length;
-    const aliveVillagers = state.players.filter((p) => p.alive && p.roleId !== 'werewolf').length;
+    const alive = state.players.filter((p) => p.alive);
+    const aliveWolves = alive.filter((p) => isWolfRole(p.roleId)).length;
+    const aliveSK = alive.filter((p) => p.roleId === 'serial_killer').length;
+    const aliveNonWolves = alive.filter((p) => !isWolfRole(p.roleId)).length;
+
+    let isCrossTeamLoversWin = false;
+    if (Array.isArray(state.lovers) && state.lovers.length === 2 && alive.length === 2) {
+      const [idA, idB] = state.lovers;
+      const pA = alive.find((p) => p.id === idA);
+      const pB = alive.find((p) => p.id === idB);
+      if (pA && pB && getPlayerSide(pA.roleId) !== getPlayerSide(pB.roleId)) {
+        isCrossTeamLoversWin = true;
+      }
+    }
 
     let winner = null;
-    if (aliveWolves === 0) winner = 'villager';
-    else if (aliveWolves >= aliveVillagers) winner = 'werewolf';
+    if (isCrossTeamLoversWin) {
+      winner = 'lovers';
+    } else if (aliveSK > 0 && (alive.length === 1 || (alive.length === 2 && aliveWolves === 0))) {
+      winner = 'serial_killer';
+    } else if (aliveWolves === 0 && aliveSK === 0) {
+      winner = 'villager';
+    } else if (aliveSK === 0 && aliveWolves >= aliveNonWolves) {
+      winner = 'werewolf';
+    }
 
     if (!winner) return false;
 
@@ -820,10 +1124,13 @@ window.WerewolfGame = (() => {
     state.phase = 'GAME_OVER';
     state.winner = winner;
     window.AudioEngine.playVictory();
-    const winMsg =
-      winner === 'villager'
-        ? 'Chúc mừng Phe Dân Làng đã chiến thắng! Toàn bộ Ma Sói đã bị tiêu diệt!'
-        : 'Ma Sói đã chiếm quyền kiểm soát ngôi làng! Phe Ma Sói chiến thắng!';
+    const winMessages = {
+      villager: 'Chúc mừng Phe Dân Làng đã chiến thắng! Toàn bộ Ma Sói và Sát Nhân đã bị tiêu diệt!',
+      werewolf: 'Ma Sói đã chiếm quyền kiểm soát ngôi làng! Phe Ma Sói chiến thắng!',
+      serial_killer: 'Sát Nhân Độc Hành là kẻ sống sót cuối cùng! Phe Thứ 3 Sát Nhân chiến thắng độc lập!',
+      lovers: 'Cặp Đôi Tình Nhân đã sống sót đến giây phút cuối cùng! Tình yêu bất diệt chiến thắng!'
+    };
+    const winMsg = winMessages[winner] || 'Trò chơi kết thúc!';
     addLog(`🏆 ${winMsg}`);
     syncStateToClients();
     renderHost();
@@ -868,24 +1175,37 @@ window.WerewolfGame = (() => {
       const prevPhase = state.phase;
       state = { ...state, ...payload };
 
+      const meSynced = (state.players || []).find((p) => p.id === session.clientId);
+      if (meSynced && meSynced.avatarId) {
+        myAvatarId = meSynced.avatarId;
+      }
+
       if (state.phase === 'LOBBY') {
         clientSecret = null;
         witchInfo = null;
+        alphaInfo = null;
         seerResult = null;
         wolfPeersChoices = {};
         wolfConfirmedMap = {};
+        selectedCupidTargets = [];
         cardRevealed = false;
       }
 
       if (state.phase === 'NIGHT' && (prevPhase !== 'NIGHT' || prevStep !== state.nightStep)) {
         selectedNightTarget = null;
+        selectedCupidTargets = [];
         witchSaveChoice = false;
         witchPoisonChoice = null;
+        alphaInfo = null;
         seerResult = null;
         wolfPeersChoices = {};
         wolfConfirmedMap = {};
 
-        if (clientSecret && state.nightStep === clientSecret.roleId && isMeAlive() && 'vibrate' in navigator) {
+        const isMyTurn =
+          clientSecret &&
+          (state.nightStep === clientSecret.roleId ||
+            (state.nightStep === 'werewolf' && isWolfRole(clientSecret.roleId)));
+        if (isMyTurn && isMeAlive() && 'vibrate' in navigator) {
           try {
             navigator.vibrate([120, 60, 120]);
           } catch (_) {}
@@ -910,6 +1230,12 @@ window.WerewolfGame = (() => {
 
     if (type === 'WW_WITCH_INFO') {
       witchInfo = payload;
+      renderPlayer();
+      return;
+    }
+
+    if (type === 'WW_ALPHA_INFO') {
+      alphaInfo = payload;
       renderPlayer();
       return;
     }
@@ -939,6 +1265,16 @@ window.WerewolfGame = (() => {
       const url = window.RoomNetwork.buildShareUrl('werewolf', state.roomCode);
       window.AppUI.copyText(url, 'Đã copy link mời phòng Ma Sói!');
     };
+
+    const openWwQrZoom = () => {
+      if (!state) return;
+      const url = window.RoomNetwork.buildShareUrl('werewolf', state.roomCode);
+      window.AppUI.openQrZoomModal('🐺 Quét QR vào phòng Ma Sói', state.roomCode, url);
+    };
+    const wwQrEl = document.getElementById('ww-host-qr');
+    const wwQrBtn = document.getElementById('ww-qr-zoom-btn');
+    if (wwQrEl) wwQrEl.onclick = openWwQrZoom;
+    if (wwQrBtn) wwQrBtn.onclick = openWwQrZoom;
 
     document.getElementById('ww-host-test-voice').onclick = () => {
       window.AudioEngine.unlock();
@@ -996,12 +1332,15 @@ window.WerewolfGame = (() => {
 
     document.getElementById('ww-host-skip-step').onclick = () => {
       if (!state || state.phase !== 'NIGHT') return;
-      if (state.nightStep === 'guard') finishGuardStep(null);
+      if (state.nightStep === 'cupid') finishCupidStep([]);
+      else if (state.nightStep === 'guard') finishGuardStep(null);
       else if (state.nightStep === 'werewolf') {
-        const prey = state.players.find((p) => p.alive && p.roleId !== 'werewolf');
+        const prey = state.players.find((p) => p.alive && !isWolfRole(p.roleId));
         finishWerewolfStep(pickMajorityWolfTarget(prey ? prey.id : null));
-      } else if (state.nightStep === 'seer') finishSeerStep();
+      } else if (state.nightStep === 'alpha_wolf') finishAlphaWolfStep(false);
+      else if (state.nightStep === 'seer') finishSeerStep();
       else if (state.nightStep === 'witch') finishWitchStep(false, null);
+      else if (state.nightStep === 'serial_killer') finishSerialKillerStep(null);
     };
 
     document.getElementById('ww-host-skip-hunter').onclick = () => resolveHunterShot(null);
@@ -1139,7 +1478,19 @@ window.WerewolfGame = (() => {
 
     const configEl = document.getElementById('ww-host-role-config');
     configEl.innerHTML = '';
-    const order = ['werewolf', 'seer', 'guard', 'witch', 'hunter', 'villager'];
+    const order = [
+      'werewolf',
+      'alpha_wolf',
+      'seer',
+      'guard',
+      'witch',
+      'hunter',
+      'cupid',
+      'elder',
+      'jester',
+      'serial_killer',
+      'villager'
+    ];
     let totalRoles = 0;
 
     order.forEach((roleId) => {
@@ -1181,7 +1532,7 @@ window.WerewolfGame = (() => {
       plus.setAttribute('aria-label', `Tăng ${role.name}`);
       plus.addEventListener('click', () => {
         autoRolesMode = false;
-        const max = ['seer', 'guard', 'witch', 'hunter'].includes(roleId) ? 1 : 10;
+        const max = roleId === 'werewolf' || roleId === 'villager' ? 10 : 1;
         state.rolesConfig[roleId] = Math.min(max, (state.rolesConfig[roleId] || 0) + 1);
         syncStateToClients();
         renderHost();
@@ -1193,7 +1544,7 @@ window.WerewolfGame = (() => {
     });
 
     const totalNote = document.getElementById('ww-host-role-total');
-    const wolves = state.rolesConfig.werewolf || 0;
+    const wolves = (state.rolesConfig.werewolf || 0) + (state.rolesConfig.alpha_wolf || 0);
     const villagersSide = totalRoles - wolves;
     const canStart =
       count >= 5 && readyCount === count && totalRoles === count && wolves >= 1 && villagersSide > wolves;
@@ -1241,10 +1592,13 @@ window.WerewolfGame = (() => {
       stepsEl.innerHTML = '';
       const order = getActiveNightOrder();
       const labels = {
+        cupid: '💘 Thần Tình Yêu ghép đôi 2 người (Đêm 1)',
         guard: '🛡️ Bảo Vệ thức dậy bảo vệ 1 người',
         werewolf: '🐺 Ma Sói thức dậy chọn con mồi',
+        alpha_wolf: '🩸 Sói Đầu Đàn quyết định Nguyền hóa nạn nhân',
         seer: '🔮 Tiên Tri thức dậy soi thân phận',
-        witch: '🧪 Phù Thủy thức dậy dùng bình thuốc'
+        witch: '🧪 Phù Thủy thức dậy dùng bình thuốc',
+        serial_killer: '🗡️ Sát Nhân thức dậy chọn mục tiêu ám sát'
       };
       const curIdx = state.nightStep ? order.indexOf(state.nightStep) : -1;
       order.forEach((stepKey, idx) => {
@@ -1335,7 +1689,7 @@ window.WerewolfGame = (() => {
           btn.type = 'button';
           btn.className = 'lynch-btn target-btn-avatar';
           btn.disabled = !canLynch;
-          btn.appendChild(window.AppUI.createAvatarEl(p.avatarId, 'avatar-sm'));
+          btn.appendChild(window.AppUI.createAvatarEl(p.avatarId, 'avatar-md'));
           const span = document.createElement('span');
           span.textContent = `Treo cổ ${p.name}`;
           btn.appendChild(span);
@@ -1353,18 +1707,26 @@ window.WerewolfGame = (() => {
 
     if (state.phase === 'GAME_OVER') {
       const banner = document.getElementById('ww-host-winner-banner');
-      banner.textContent =
-        state.winner === 'villager' ? '🏆 PHE DÂN LÀNG CHIẾN THẮNG!' : '🐺 PHE MA SÓI CHIẾN THẮNG!';
+      const winMap = {
+        villager: '🏆 PHE DÂN LÀNG CHIẾN THẮNG!',
+        werewolf: '🐺 PHE MA SÓI CHIẾN THẮNG!',
+        jester: '🃏 PHE THỨ 3 — THẰNG NGỐ (KẺ CHÁN ĐỜI) CHIẾN THẮNG!',
+        serial_killer: '🗡️ PHE THỨ 3 — SÁT NHÂN ĐỘC HÀNH CHIẾN THẮNG!',
+        lovers: '💘 PHE THỨ 3 — CẶP ĐÔI TÌNH NHÂN CHIẾN THẮNG!'
+      };
+      banner.textContent = winMap[state.winner] || '🏆 KẾT THÚC!';
 
       const revealEl = document.getElementById('ww-host-reveal-list');
       revealEl.innerHTML = '';
+      const loverSet = new Set(state.lovers || []);
       state.players.forEach((p) => {
         const r = WEREWOLF_ROLES[p.roleId] || WEREWOLF_ROLES.villager;
         const li = document.createElement('li');
         li.className = 'reveal-item pop-in';
         const left = buildPlayerLabelEl(p, 'avatar-md', ` (${p.alive ? 'Sống' : 'Đã chết'})`);
         const right = document.createElement('span');
-        right.textContent = `${r.icon} ${r.name}`;
+        const loverMark = loverSet.has(p.id) ? ' 💘' : '';
+        right.textContent = `${r.icon} ${r.name}${loverMark}`;
         li.append(left, right);
         revealEl.appendChild(li);
       });
@@ -1401,10 +1763,11 @@ window.WerewolfGame = (() => {
       session.send('WW_READY', { ready: nextReady });
     };
 
-    document.getElementById('ww-pl-toggle-card').onclick = () => {
-      cardRevealed = !cardRevealed;
+    window.AppUI.bindHoldToPeekCard(document.getElementById('ww-pl-toggle-card'), (show) => {
+      if (cardRevealed === show) return;
+      cardRevealed = show;
       renderSecretCard();
-    };
+    });
   }
 
   function renderSecretCard() {
@@ -1412,6 +1775,16 @@ window.WerewolfGame = (() => {
     const bgLayer = document.getElementById('ww-pl-card-bg');
     btn.setAttribute('aria-expanded', String(cardRevealed));
     btn.classList.toggle('is-flipped', cardRevealed);
+
+    const cardAv = document.getElementById('ww-pl-card-avatar');
+    if (cardAv) {
+      cardAv.innerHTML = '';
+      cardAv.appendChild(window.AppUI.createAvatarEl(myAvatarId, 'avatar-xl'));
+    }
+    const cardOwner = document.getElementById('ww-pl-card-owner');
+    if (cardOwner) {
+      cardOwner.textContent = `${myName || 'Bạn'} — 👆 Nhấn & GIỮ để xem Vai Trò`;
+    }
 
     if (clientSecret && clientSecret.roleId) {
       const role = WEREWOLF_ROLES[clientSecret.roleId];
@@ -1426,9 +1799,18 @@ window.WerewolfGame = (() => {
       document.getElementById('ww-pl-role-desc').textContent = role.desc;
 
       const matesEl = document.getElementById('ww-pl-role-teammates');
+      const extraLines = [];
       if (clientSecret.teammates && clientSecret.teammates.length > 0) {
+        extraLines.push(`Đồng bọn Ma Sói: ${clientSecret.teammates.map((m) => m.name).join(', ')}`);
+      }
+      if (clientSecret.loverInfo) {
+        extraLines.push(
+          `💑 Người yêu định mệnh: ${clientSecret.loverInfo.name} (${clientSecret.loverInfo.roleName})`
+        );
+      }
+      if (extraLines.length > 0) {
         matesEl.hidden = false;
-        matesEl.textContent = `Đồng bọn Ma Sói: ${clientSecret.teammates.map((m) => m.name).join(', ')}`;
+        matesEl.textContent = extraLines.join(' • ');
       } else {
         matesEl.hidden = true;
       }
@@ -1484,6 +1866,14 @@ window.WerewolfGame = (() => {
 
     lobbyEl.hidden = true;
     gameEl.hidden = false;
+    const activeChip = document.getElementById('ww-pl-active-player');
+    if (activeChip) {
+      activeChip.innerHTML = '';
+      activeChip.appendChild(window.AppUI.createAvatarEl(myAvatarId, 'avatar-sm'));
+      const chipName = document.createElement('span');
+      chipName.textContent = myName;
+      activeChip.appendChild(chipName);
+    }
     renderSecretCard();
 
     const me = state.players.find((p) => p.id === session.clientId);
@@ -1509,7 +1899,7 @@ window.WerewolfGame = (() => {
     btn.type = 'button';
     btn.className = `target-btn target-btn-avatar ${isSelected ? 'selected' : ''}`;
     btn.disabled = Boolean(isDisabled);
-    btn.appendChild(window.AppUI.createAvatarEl(player.avatarId, 'avatar-sm'));
+    btn.appendChild(window.AppUI.createAvatarEl(player.avatarId, 'avatar-md'));
     const span = document.createElement('span');
     span.textContent = labelText;
     btn.appendChild(span);
@@ -1524,8 +1914,14 @@ window.WerewolfGame = (() => {
     if (state.phase === 'GAME_OVER') {
       const box = document.createElement('div');
       box.className = 'winner-banner';
-      box.textContent =
-        state.winner === 'villager' ? '🏆 PHE DÂN LÀNG CHIẾN THẮNG!' : '🐺 PHE MA SÓI CHIẾN THẮNG!';
+      const winMap = {
+        villager: '🏆 PHE DÂN LÀNG CHIẾN THẮNG!',
+        werewolf: '🐺 PHE MA SÓI CHIẾN THẮNG!',
+        jester: '🃏 PHE THỨ 3 — THẰNG NGỐ (KẺ CHÁN ĐỜI) CHIẾN THẮNG!',
+        serial_killer: '🗡️ PHE THỨ 3 — SÁT NHÂN ĐỘC HÀNH CHIẾN THẮNG!',
+        lovers: '💘 PHE THỨ 3 — CẶP ĐÔI TÌNH NHÂN CHIẾN THẮNG!'
+      };
+      box.textContent = winMap[state.winner] || '🏆 KẾT THÚC!';
       area.appendChild(box);
       return;
     }
@@ -1636,15 +2032,130 @@ window.WerewolfGame = (() => {
     }
 
     const myRole = clientSecret?.roleId;
-    if (!myRole || state.nightStep !== myRole) {
+    const activeTurn =
+      myRole &&
+      (state.nightStep === myRole || (state.nightStep === 'werewolf' && isWolfRole(myRole)));
+    if (!activeTurn) {
       area.innerHTML = `<div class="sleep-box"><span class="sleep-icon" aria-hidden="true">🌙</span><p>Đang trong đêm... Hãy nhắm mắt lại và lắng nghe Bot Quản Trò.</p></div>`;
       return;
     }
 
-    if (myRole === 'guard') renderGuardActionUI(area);
-    else if (myRole === 'werewolf') renderWerewolfActionUI(area);
-    else if (myRole === 'seer') renderSeerActionUI(area);
-    else if (myRole === 'witch') renderWitchActionUI(area);
+    if (state.nightStep === 'cupid') renderCupidActionUI(area);
+    else if (state.nightStep === 'guard') renderGuardActionUI(area);
+    else if (state.nightStep === 'werewolf') renderWerewolfActionUI(area);
+    else if (state.nightStep === 'alpha_wolf') renderAlphaWolfActionUI(area);
+    else if (state.nightStep === 'seer') renderSeerActionUI(area);
+    else if (state.nightStep === 'witch') renderWitchActionUI(area);
+    else if (state.nightStep === 'serial_killer') renderSerialKillerActionUI(area);
+  }
+
+  function renderCupidActionUI(area) {
+    const h = document.createElement('h3');
+    h.textContent = '💘 Lượt Thần Tình Yêu: Chọn 2 người để ghép đôi';
+    area.appendChild(h);
+
+    const hint = document.createElement('p');
+    hint.className = 'panel-desc';
+    hint.textContent = `Đã chọn ${selectedCupidTargets.length}/2 người (có thể chọn cả chính mình):`;
+    area.appendChild(hint);
+
+    const grid = document.createElement('div');
+    grid.className = 'target-grid';
+    state.players
+      .filter((p) => p.alive)
+      .forEach((p) => {
+        const isSel = selectedCupidTargets.includes(p.id);
+        grid.appendChild(
+          makeTargetBtn(p, isSel ? `💘 ${p.name}` : p.name, isSel, false, () => {
+            if (selectedCupidTargets.includes(p.id)) {
+              selectedCupidTargets = selectedCupidTargets.filter((id) => id !== p.id);
+            } else if (selectedCupidTargets.length < 2) {
+              selectedCupidTargets = [...selectedCupidTargets, p.id];
+            } else {
+              selectedCupidTargets = [selectedCupidTargets[1], p.id];
+            }
+            renderPlayer();
+          })
+        );
+      });
+    area.appendChild(grid);
+
+    const confirm = document.createElement('button');
+    confirm.type = 'button';
+    confirm.className = 'btn btn-primary btn-block';
+    confirm.disabled = selectedCupidTargets.length !== 2;
+    confirm.textContent = '💘 Xác nhận ghép đôi Tình Nhân';
+    confirm.addEventListener('click', () => {
+      session.send('WW_ACTION', { step: 'cupid', targetIds: selectedCupidTargets });
+    });
+    area.appendChild(confirm);
+  }
+
+  function renderAlphaWolfActionUI(area) {
+    const h = document.createElement('h3');
+    h.textContent = '🩸 Lượt Sói Đầu Đàn (Kỹ năng Nguyền Hóa)';
+    area.appendChild(h);
+
+    const victimName = alphaInfo?.victimName;
+    const canConvert = Boolean(alphaInfo?.canConvert && victimName);
+
+    const infoBox = document.createElement('div');
+    infoBox.className = 'result-banner';
+    infoBox.innerHTML = victimName
+      ? `Đêm nay bầy Sói đã chọn cắn <strong>${escapeHtml(victimName)}</strong>. Bạn có muốn dùng quyền Nguyền <strong>1 lần duy nhất</strong> biến người này thành Ma Sói thay vì giết họ không?`
+      : 'Đêm nay chưa có mục tiêu để nguyền hóa.';
+    area.appendChild(infoBox);
+
+    if (canConvert) {
+      const convertBtn = document.createElement('button');
+      convertBtn.type = 'button';
+      convertBtn.className = 'btn btn-danger btn-block';
+      convertBtn.textContent = `🩸 Nguyền hóa ${victimName} thành Ma Sói`;
+      convertBtn.addEventListener('click', () => {
+        session.send('WW_ACTION', { step: 'alpha_wolf', convert: true });
+      });
+      area.appendChild(convertBtn);
+    }
+
+    const skipBtn = document.createElement('button');
+    skipBtn.type = 'button';
+    skipBtn.className = 'btn btn-secondary btn-block';
+    skipBtn.style.marginTop = '0.55rem';
+    skipBtn.textContent = '⏭️ Không nguyền (Để Sói cắn như bình thường)';
+    skipBtn.addEventListener('click', () => {
+      session.send('WW_ACTION', { step: 'alpha_wolf', convert: false });
+    });
+    area.appendChild(skipBtn);
+  }
+
+  function renderSerialKillerActionUI(area) {
+    const h = document.createElement('h3');
+    h.textContent = '🗡️ Lượt Sát Nhân Độc Hành: Chọn mục tiêu đêm nay';
+    area.appendChild(h);
+
+    const grid = document.createElement('div');
+    grid.className = 'target-grid';
+    state.players
+      .filter((p) => p.alive && p.id !== session.clientId)
+      .forEach((p) => {
+        grid.appendChild(
+          makeTargetBtn(p, `🗡️ ${p.name}`, selectedNightTarget === p.id, false, () => {
+            selectedNightTarget = p.id;
+            renderPlayer();
+          })
+        );
+      });
+    area.appendChild(grid);
+
+    const confirm = document.createElement('button');
+    confirm.type = 'button';
+    confirm.className = 'btn btn-danger btn-block';
+    confirm.disabled = !selectedNightTarget;
+    confirm.textContent = '🗡️ Ám sát người này';
+    confirm.addEventListener('click', () => {
+      session.send('WW_ACTION', { step: 'serial_killer', targetId: selectedNightTarget });
+    });
+    area.appendChild(confirm);
   }
 
   function renderGuardActionUI(area) {
@@ -1760,23 +2271,45 @@ window.WerewolfGame = (() => {
       return;
     }
 
+    const inspectedSet = new Set(state.seerHistory || []);
+    const candidates = state.players.filter((p) => p.alive && p.id !== session.clientId);
+    const hasUninspected = candidates.some((p) => !inspectedSet.has(p.id));
+
     const pNote = document.createElement('p');
     pNote.className = 'panel-desc';
-    pNote.textContent = 'Chọn 1 người để soi xem họ có phải Ma Sói hay không:';
+    pNote.textContent = hasUninspected
+      ? 'Chọn 1 người chưa soi để biết họ có phải Ma Sói hay không:'
+      : 'Bạn đã soi hết tất cả người chơi còn sống! Hãy ấn xong để tiếp tục.';
     area.appendChild(pNote);
 
     const grid = document.createElement('div');
     grid.className = 'target-grid';
-    state.players
-      .filter((p) => p.alive && p.id !== session.clientId)
-      .forEach((p) => {
-        grid.appendChild(
-          makeTargetBtn(p, `🔮 ${p.name}`, false, false, () => {
+    candidates.forEach((p) => {
+      const alreadyDone = inspectedSet.has(p.id);
+      grid.appendChild(
+        makeTargetBtn(
+          p,
+          alreadyDone ? `${p.name} (Đã soi đêm trước)` : `🔮 ${p.name}`,
+          false,
+          alreadyDone,
+          () => {
             session.send('WW_ACTION', { step: 'seer', action: 'inspect', targetId: p.id });
-          })
-        );
-      });
+          }
+        )
+      );
+    });
     area.appendChild(grid);
+
+    if (!hasUninspected) {
+      const skipBtn = document.createElement('button');
+      skipBtn.type = 'button';
+      skipBtn.className = 'btn btn-primary btn-block';
+      skipBtn.textContent = 'Nhắm mắt lại';
+      skipBtn.addEventListener('click', () => {
+        session.send('WW_ACTION', { step: 'seer', action: 'done' });
+      });
+      area.appendChild(skipBtn);
+    }
   }
 
   function renderWitchActionUI(area) {

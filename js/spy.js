@@ -1,4 +1,4 @@
-// Game 2: Gián Điệp v2.2 — Tất cả cùng chơi, UI tối giản khi vào trận, Avatar & Thẻ bài 3D
+// Game 2: Gián Điệp v2.4 — Laptop làm Quản Trò Dẫn Chuyện & Tự tính Lượt Vote; Điện Thoại cầm Thẻ Mật
 window.SpyGame = (() => {
   const {
     SPY_CARD_THEMES,
@@ -22,6 +22,19 @@ window.SpyGame = (() => {
   let lastReceivedSeq = -1;
   let demoCounter = 1;
   let voteAllAnnounced = false;
+  let joinTimers = [];
+
+  function computeMaxSpyVotes(playerCount, spyCount, hasMrWhite, mode) {
+    if (mode === 'spyfall') {
+      return Math.max(1, spyCount || 1);
+    }
+    const badCount = (spyCount || 1) + (hasMrWhite ? 1 : 0);
+    let allowedMistakes = 0;
+    if (playerCount >= 9) allowedMistakes = 3;
+    else if (playerCount >= 7) allowedMistakes = 2;
+    else if (playerCount >= 5) allowedMistakes = 1;
+    return badCount + allowedMistakes;
+  }
 
   function createInitialState(roomCode) {
     return {
@@ -36,12 +49,16 @@ window.SpyGame = (() => {
         mrWhite: false
       },
       round: 1,
+      maxVotes: 1,
+      votesUsed: 0,
+      aliveBadCount: 1,
+      botText: 'Chờ mọi người quét QR vào phòng và ấn Sẵn sàng...',
       roundSpark: '',
       twistQuestionRevealed: false,
       revealedQuestionText: '',
-      players: [], // { id, name, ready, alive, isDemo, role (host-only), word, locRole }
+      players: [], // { id, name, avatarId, ready, alive, isDemo, role (host-only), word, locRole }
       turnOrder: [],
-      votes: {}, // { voterId: targetId }
+      votes: {},
       pendingMrWhiteId: null,
       winner: null, // 'civilian' | 'spy' | 'mr_white'
       winReason: '',
@@ -52,6 +69,9 @@ window.SpyGame = (() => {
 
   function getPublicState(s) {
     const revealAll = s.phase === 'GAME_OVER';
+    const aliveBadCount = (s.players || []).filter(
+      (p) => p.alive && (p.role === 'spy' || p.role === 'mr_white')
+    ).length;
     return {
       stateSeq: s.stateSeq,
       roomCode: s.roomCode,
@@ -59,6 +79,10 @@ window.SpyGame = (() => {
       phase: s.phase,
       config: s.config,
       round: s.round,
+      maxVotes: s.maxVotes || 1,
+      votesUsed: s.votesUsed || 0,
+      aliveBadCount: s.phase === 'LOBBY' ? s.config.spyCount || 1 : aliveBadCount,
+      botText: s.botText || '',
       roundSpark: s.roundSpark,
       twistQuestionRevealed: s.twistQuestionRevealed,
       revealedQuestionText: s.twistQuestionRevealed || revealAll ? s.revealedQuestionText : '',
@@ -76,6 +100,7 @@ window.SpyGame = (() => {
         ready: p.ready,
         alive: p.alive,
         isDemo: p.isDemo,
+        revealedRole: !p.alive || revealAll ? p.role : null,
         role: revealAll ? p.role : null,
         word: revealAll ? p.word : null,
         locRole: revealAll ? p.locRole : null
@@ -87,6 +112,14 @@ window.SpyGame = (() => {
     if (!isHost || !session || !state) return;
     state.stateSeq += 1;
     session.send('SPY_STATE', getPublicState(state));
+  }
+
+  function setSpyBotSpeech(text) {
+    if (!state) return;
+    state.botText = text;
+    syncStateToClients();
+    render();
+    window.AudioEngine.speak(text);
   }
 
   function deliverSecretToPlayer(player) {
@@ -109,11 +142,11 @@ window.SpyGame = (() => {
   }
 
   // ==================== ENTRY POINTS ====================
-  function startHost(roomCode, hostName, hostAvatarId) {
+  function startHost(roomCode) {
     cleanup();
     isHost = true;
-    myName = hostName;
-    myAvatarId = hostAvatarId || window.AppUI.getSavedAvatarId();
+    myName = 'Quản Trò';
+    myAvatarId = '';
     demoCounter = 1;
     state = createInitialState(roomCode);
 
@@ -126,15 +159,7 @@ window.SpyGame = (() => {
     });
 
     state.hostId = session.clientId;
-    state.players.push({
-      id: session.clientId,
-      name: myName,
-      avatarId: myAvatarId,
-      ready: false,
-      alive: true,
-      isDemo: false,
-      role: null
-    });
+    // Laptop chỉ đóng vai Quản Trò Dẫn Chuyện — không thêm vào danh sách người chơi!
 
     bindEvents();
     renderShareBox();
@@ -169,11 +194,13 @@ window.SpyGame = (() => {
     render();
 
     announceJoin();
-    setTimeout(announceJoin, 900);
-    setTimeout(announceJoin, 2400);
+    joinTimers.push(setTimeout(announceJoin, 900));
+    joinTimers.push(setTimeout(announceJoin, 2400));
   }
 
   function cleanup() {
+    joinTimers.forEach((t) => clearTimeout(t));
+    joinTimers = [];
     window.AudioEngine.stopSpeech();
     if (session) {
       session.destroy();
@@ -320,6 +347,8 @@ window.SpyGame = (() => {
     shuffle(indices);
 
     state.round = 1;
+    state.votesUsed = 0;
+    state.maxVotes = computeMaxSpyVotes(n, spiesWanted, wantMrWhite, state.config.mode);
     state.votes = {};
     voteAllAnnounced = false;
     state.pendingMrWhiteId = null;
@@ -426,21 +455,22 @@ window.SpyGame = (() => {
     window.AudioEngine.playRoosterDawn();
 
     const firstSpeaker = state.players.find((p) => p.id === state.turnOrder[0]);
+    const voteBudgetNote = `Cả hội có tối đa ${state.maxVotes} lượt vote để tìm ra Gián Điệp.`;
     if (state.config.mode === 'undercover') {
-      window.AudioEngine.speak(
-        `Ván Gián Điệp bắt đầu! Mọi người hãy lật thẻ xem từ khóa. Người phát biểu đầu tiên là ${
+      setSpyBotSpeech(
+        `Ván Gián Điệp bắt đầu! Mọi người hãy giữ thẻ trên điện thoại để xem từ khóa. Người phát biểu đầu tiên là ${
           firstSpeaker ? firstSpeaker.name : ''
-        }. ${state.roundSpark}`
+        }. ${voteBudgetNote}`
       );
     } else if (state.config.mode === 'twist') {
-      window.AudioEngine.speak(
-        `Chế độ Hỏi Xoáy bắt đầu! Hãy đọc thầm câu hỏi trên thẻ và lần lượt trả lời thành tiếng, bắt đầu từ ${
+      setSpyBotSpeech(
+        `Chế độ Hỏi Xoáy bắt đầu! Hãy đọc thầm câu hỏi trên điện thoại và lần lượt trả lời thành tiếng, bắt đầu từ ${
           firstSpeaker ? firstSpeaker.name : ''
-        }!`
+        }! ${voteBudgetNote}`
       );
     } else {
-      window.AudioEngine.speak(
-        `Spyfall bắt đầu! Dân thường hãy xem địa điểm bí mật, còn Gián Điệp hãy lắng nghe thật kỹ nhé!`
+      setSpyBotSpeech(
+        `Spyfall bắt đầu! Dân thường hãy xem địa điểm bí mật, còn Gián Điệp hãy lắng nghe thật kỹ! ${voteBudgetNote}`
       );
     }
   }
@@ -448,10 +478,8 @@ window.SpyGame = (() => {
   function revealTwistQuestion() {
     if (!isHost || !state || state.config.mode !== 'twist') return;
     state.twistQuestionRevealed = true;
-    syncStateToClients();
-    render();
     window.AudioEngine.playVoteGavel();
-    window.AudioEngine.speak(`Câu hỏi thật của Dân Thường là: ${state.revealedQuestionText}`);
+    setSpyBotSpeech(`Câu hỏi thật của Dân Thường là: ${state.revealedQuestionText}`);
   }
 
   function eliminatePlayer(targetId) {
@@ -461,15 +489,16 @@ window.SpyGame = (() => {
 
     window.AudioEngine.playVoteGavel();
     target.alive = false;
+    state.votesUsed = (state.votesUsed || 0) + 1;
     state.votes = {};
     voteAllAnnounced = false;
 
     if (state.config.mode === 'undercover' && target.role === 'mr_white') {
       state.phase = 'MR_WHITE_GUESS';
       state.pendingMrWhiteId = target.id;
-      syncStateToClients();
-      render();
-      window.AudioEngine.speak(`${target.name} chính là Mr White! Mời ${target.name} đoán từ khóa của Dân Thường.`);
+      const hostInput = document.getElementById('spy-host-mrwhite-input');
+      if (hostInput) hostInput.value = '';
+      setSpyBotSpeech(`${target.name} chính là Mr. White! Mời ${target.name} đoán từ khóa của Dân Thường.`);
       if (target.id === session.clientId) {
         openGuessDialog('mr_white');
       } else if (target.isDemo) {
@@ -517,35 +546,46 @@ window.SpyGame = (() => {
     const alive = state.players.filter((p) => p.alive);
     const aliveBad = alive.filter((p) => p.role === 'spy' || p.role === 'mr_white');
     const aliveCiv = alive.filter((p) => p.role === 'civilian');
+    const remainingVotes = Math.max(0, (state.maxVotes || 1) - (state.votesUsed || 0));
 
     if (state.config.mode === 'spyfall') {
-      if (eliminated && eliminated.role === 'spy' && aliveBad.length === 0) {
-        endGame('civilian', `Chúc mừng! Cả hội đã bắt đúng Gián Điệp ${eliminated.name}!`);
+      if (aliveBad.length === 0) {
+        endGame('civilian', `Chính xác! Cả hội đã bắt đúng Gián Điệp ${eliminated ? eliminated.name : ''}!`);
         return;
       }
-      if (eliminated && eliminated.role === 'civilian' && aliveBad.length >= aliveCiv.length) {
-        endGame('spy', `Bắt nhầm Dân Thường ${eliminated.name}! Gián Điệp đã thoát thành công!`);
+      if (eliminated && eliminated.role === 'civilian' && remainingVotes <= 0) {
+        endGame('spy', `Bắt nhầm Dân Thường ${eliminated.name}! Hết lượt vote — Gián Điệp đã thoát thành công!`);
+        return;
+      }
+      if (aliveBad.length >= aliveCiv.length) {
+        endGame('spy', `Gián Điệp đã áp đảo số lượng Dân Thường! Phe Gián Điệp thắng!`);
         return;
       }
       advanceToNextRound(
-        eliminated ? `${eliminated.name} (${eliminated.role === 'spy' ? 'Gián Điệp' : 'Dân Thường'}) đã bị loại!` : ''
+        eliminated ? `${eliminated.name} (${eliminated.role === 'spy' ? 'Gián Điệp' : 'Dân Thường'}) đã bị loại! Còn ${remainingVotes} lượt vote.` : ''
       );
       return;
     }
 
     // Undercover & Twist
     if (aliveBad.length === 0) {
-      endGame('civilian', 'Toàn bộ Gián Điệp đã bị vạch mặt! Phe Dân Thường chiến thắng!');
+      endGame('civilian', 'Chính xác! Toàn bộ Gián Điệp đã bị vạch mặt! Phe Dân Thường chiến thắng!');
       return;
     }
     if (aliveBad.length >= aliveCiv.length) {
-      endGame('spy', 'Số Gián Điệp còn lại đã ngang bằng Phe Dân! Phe Gián Điệp chiến thắng!');
+      endGame('spy', 'Số Gián Điệp còn lại đã ngang bằng Dân Thường! Phe Gián Điệp chiến thắng!');
+      return;
+    }
+    if (remainingVotes <= 0) {
+      endGame('spy', 'Cả hội đã dùng hết toàn bộ lượt Vote mà vẫn chưa bắt hết Gián Điệp! Phe Gián Điệp chiến thắng!');
       return;
     }
 
     const roleLabel =
       eliminated?.role === 'spy' ? 'Gián Điệp' : eliminated?.role === 'mr_white' ? 'Mr. White' : 'Dân Thường';
-    advanceToNextRound(eliminated ? `${eliminated.name} đã bị loại (${roleLabel})!` : '');
+    advanceToNextRound(
+      eliminated ? `${eliminated.name} là ${roleLabel}! Cả hội còn ${remainingVotes} lượt vote.` : ''
+    );
   }
 
   function advanceToNextRound(notice) {
@@ -557,11 +597,12 @@ window.SpyGame = (() => {
     const aliveIds = state.players.filter((p) => p.alive).map((p) => p.id);
     shuffle(aliveIds);
     state.turnOrder = aliveIds;
-    syncStateToClients();
-    render();
     if (notice) {
       window.AppUI.showToast(notice);
-      window.AudioEngine.speak(`${notice} Bắt đầu vòng ${state.round}! ${state.roundSpark}`);
+      setSpyBotSpeech(`${notice} Bắt đầu vòng ${state.round}!`);
+    } else {
+      syncStateToClients();
+      render();
     }
   }
 
@@ -570,9 +611,7 @@ window.SpyGame = (() => {
     state.winner = winner;
     state.winReason = winReason;
     window.AudioEngine.playVictory();
-    syncStateToClients();
-    render();
-    window.AudioEngine.speak(winReason);
+    setSpyBotSpeech(winReason);
   }
 
   // ==================== CLIENT MESSAGE HANDLER ====================
@@ -594,6 +633,10 @@ window.SpyGame = (() => {
 
       const prevReset = state.crossedResetToken;
       state = { ...state, ...payload };
+      const meSynced = (state.players || []).find((p) => p.id === session.clientId);
+      if (meSynced && meSynced.avatarId) {
+        myAvatarId = meSynced.avatarId;
+      }
       if (state.phase === 'LOBBY') {
         mySecret = null;
         cardRevealed = false;
@@ -622,6 +665,19 @@ window.SpyGame = (() => {
       const url = window.RoomNetwork.buildShareUrl('spy', state.roomCode);
       window.AppUI.copyText(url, 'Đã copy link mời phòng Gián Điệp!');
     };
+
+    const openSpyQrZoom = () => {
+      if (!state) return;
+      const url = window.RoomNetwork.buildShareUrl('spy', state.roomCode);
+      window.AppUI.openQrZoomModal('🕵️ Quét QR vào phòng Gián Điệp', state.roomCode, url);
+    };
+    const spyQrEl = document.getElementById('spy-qr');
+    const spyQrBtn = document.getElementById('spy-qr-zoom-btn');
+    if (spyQrEl) spyQrEl.onclick = openSpyQrZoom;
+    if (spyQrBtn) spyQrBtn.onclick = openSpyQrZoom;
+
+    const spySoundBtn = document.getElementById('spy-ingame-sound');
+    if (spySoundBtn) spySoundBtn.onclick = () => window.AppUI.openSoundSettings();
 
     const leaveRoom = () => {
       if (!isHost && session) session.send('SPY_LEAVE', {});
@@ -699,35 +755,31 @@ window.SpyGame = (() => {
 
     document.getElementById('spy-start-btn').onclick = () => startNewRoundGame();
 
-    document.getElementById('spy-toggle-card').onclick = () => {
-      cardRevealed = !cardRevealed;
+    window.AppUI.bindHoldToPeekCard(document.getElementById('spy-toggle-card'), (show) => {
+      if (cardRevealed === show) return;
+      cardRevealed = show;
       renderSecretCard();
-    };
+    });
 
     document.getElementById('spy-twist-reveal-btn').onclick = () => revealTwistQuestion();
     document.getElementById('spy-open-guess-location').onclick = () => openGuessDialog('spyfall');
 
-    document.getElementById('spy-finalize-vote').onclick = async () => {
-      if (!isHost || state.phase !== 'PLAYING') return;
-      const counts = getVoteCounts();
-      const entries = Object.entries(counts).sort((a, b) => b[1].length - a[1].length);
-      if (entries.length === 0) {
-        window.AppUI.showToast('Chưa có ai bấm Vote trên điện thoại! Hãy bấm nút Loại trực tiếp bên cạnh tên.');
-        return;
-      }
-      const topId = entries[0][0];
-      const topPlayer = state.players.find((p) => p.id === topId);
-      const ok = await window.AppUI.confirmDialog(
-        'Chốt kết quả bỏ phiếu?',
-        `Loại ${topPlayer ? topPlayer.name : '?'} (${entries[0][1].length} phiếu)?`
-      );
-      if (ok) eliminatePlayer(topId);
-    };
+    const hostMrWhiteForm = document.getElementById('spy-host-mrwhite-form');
+    if (hostMrWhiteForm) {
+      hostMrWhiteForm.onsubmit = (e) => {
+        e.preventDefault();
+        if (!isHost || !state || state.phase !== 'MR_WHITE_GUESS') return;
+        const input = document.getElementById('spy-host-mrwhite-input');
+        const val = input ? input.value.trim() : '';
+        if (!val) return;
+        resolveMrWhiteGuess(val);
+      };
+    }
 
     document.getElementById('spy-skip-round').onclick = () => {
       if (!isHost || state.phase !== 'PLAYING') return;
       window.AudioEngine.playVoteGavel();
-      advanceToNextRound('Hòa phiếu! Chuyển sang vòng tiếp theo.');
+      advanceToNextRound('Hòa phiếu! Chưa loại ai, chuyển sang vòng tiếp theo.');
     };
 
     document.getElementById('spy-play-again').onclick = () => {
@@ -859,30 +911,43 @@ window.SpyGame = (() => {
     document.getElementById('spy-player-count').textContent = String(count);
     document.getElementById('spy-ready-summary').textContent = `${readyCount}/${count} sẵn sàng`;
     document.getElementById('spy-host-demo-wrap').hidden = !isHost;
+    const playerLobbyControls = document.getElementById('spy-player-lobby-controls');
+    const hostLobbyGuide = document.getElementById('spy-host-lobby-guide');
+    if (playerLobbyControls) playerLobbyControls.hidden = isHost;
+    if (hostLobbyGuide) hostLobbyGuide.hidden = !isHost;
 
-    const me = state.players.find((p) => p.id === session.clientId);
-    const readyBtn = document.getElementById('spy-ready-btn');
-    if (me && me.ready) {
-      readyBtn.textContent = '⏳ Đã Sẵn Sàng (Ấn để hủy)';
-      readyBtn.className = 'btn btn-secondary btn-lg btn-block';
-    } else {
-      readyBtn.textContent = '✅ Ấn Sẵn Sàng';
-      readyBtn.className = 'btn btn-success btn-lg btn-block';
+    if (!isHost) {
+      const me = state.players.find((p) => p.id === session.clientId);
+      const readyBtn = document.getElementById('spy-ready-btn');
+      if (me && me.ready) {
+        readyBtn.textContent = '⏳ Đã Sẵn Sàng (Ấn để hủy)';
+        readyBtn.className = 'btn btn-secondary btn-lg btn-block';
+      } else {
+        readyBtn.textContent = '✅ Ấn Sẵn Sàng';
+        readyBtn.className = 'btn btn-success btn-lg btn-block';
+      }
     }
 
     const listEl = document.getElementById('spy-player-list');
     listEl.innerHTML = '';
-    state.players.forEach((p) => {
-      const li = document.createElement('li');
-      li.className = 'player-item pop-in';
-      const suffix = `${p.id === session.clientId ? ' (Bạn)' : ''}${p.id === state.hostId ? ' 👑' : ''}`;
-      const left = buildSpyPlayerLabelEl(p, 'avatar-md', suffix);
-      const pill = document.createElement('span');
-      pill.className = `pill ${p.ready ? 'pill-ready' : 'pill-wait'}`;
-      pill.textContent = p.ready ? 'Sẵn sàng' : 'Đang chờ';
-      li.append(left, pill);
-      listEl.appendChild(li);
-    });
+    if (count === 0) {
+      const empty = document.createElement('li');
+      empty.className = 'player-item';
+      empty.textContent = 'Chưa có người chơi nào. Hãy quét mã QR bằng điện thoại để vào phòng!';
+      listEl.appendChild(empty);
+    } else {
+      state.players.forEach((p) => {
+        const li = document.createElement('li');
+        li.className = 'player-item pop-in';
+        const suffix = p.id === session.clientId ? ' (Bạn)' : '';
+        const left = buildSpyPlayerLabelEl(p, 'avatar-md', suffix);
+        const pill = document.createElement('span');
+        pill.className = `pill ${p.ready ? 'pill-ready' : 'pill-wait'}`;
+        pill.textContent = p.ready ? 'Sẵn sàng' : 'Đang chờ';
+        li.append(left, pill);
+        listEl.appendChild(li);
+      });
+    }
 
     const cfgForm = document.getElementById('spy-config-form');
     cfgForm.querySelectorAll('input[name="spyMode"]').forEach((r) => {
@@ -927,6 +992,16 @@ window.SpyGame = (() => {
     const bgLayer = document.getElementById('spy-card-bg');
     btn.setAttribute('aria-expanded', String(cardRevealed));
     btn.classList.toggle('is-flipped', cardRevealed);
+
+    const cardAv = document.getElementById('spy-card-avatar');
+    if (cardAv) {
+      cardAv.innerHTML = '';
+      cardAv.appendChild(window.AppUI.createAvatarEl(myAvatarId, 'avatar-xl'));
+    }
+    const cardOwner = document.getElementById('spy-card-owner');
+    if (cardOwner) {
+      cardOwner.textContent = `${myName || 'Bạn'} — 👆 Nhấn & GIỮ để xem Thẻ Mật`;
+    }
 
     if (!mySecret) return;
     const theme = SPY_CARD_THEMES[mySecret.role] || SPY_CARD_THEMES.civilian;
@@ -1007,8 +1082,30 @@ window.SpyGame = (() => {
       deckBadge.hidden = true;
     }
 
-    document.getElementById('spy-spark-note').textContent = state.roundSpark || 'Thảo luận tự do • Vote xong ấn chốt';
-    renderSecretCard();
+    document.getElementById('spy-spark-note').textContent = state.roundSpark || 'Thảo luận tự do • Bầu chọn ngoài đời rồi ấn trên Laptop';
+
+    const botBox = document.getElementById('spy-bot-announcer');
+    const botTxt = document.getElementById('spy-bot-text');
+    if (botBox) botBox.hidden = !isHost;
+    if (botTxt && isHost) botTxt.textContent = state.botText || 'Bot đang dẫn dắt ván chơi...';
+
+    const remainingVotes = Math.max(0, (state.maxVotes || 1) - (state.votesUsed || 0));
+    const remVotesEl = document.getElementById('spy-remaining-votes');
+    const remBadEl = document.getElementById('spy-remaining-bad');
+    if (remVotesEl) remVotesEl.textContent = `${remainingVotes} / ${state.maxVotes || 1} lượt`;
+    if (remBadEl) {
+      const badLeft =
+        typeof state.aliveBadCount === 'number'
+          ? state.aliveBadCount
+          : state.players.filter((p) => p.alive && (p.role === 'spy' || p.role === 'mr_white')).length;
+      remBadEl.textContent = `${badLeft} người`;
+    }
+
+    const cardPanel = document.getElementById('spy-player-card-panel');
+    if (cardPanel) cardPanel.hidden = isHost;
+    if (!isHost) {
+      renderSecretCard();
+    }
 
     const isSpyfall = state.config.mode === 'spyfall';
     const isTwist = state.config.mode === 'twist';
@@ -1062,80 +1159,66 @@ window.SpyGame = (() => {
         const p = state.players.find((x) => x.id === id);
         if (p) {
           const li = document.createElement('li');
-          li.appendChild(buildSpyPlayerLabelEl(p, 'avatar-sm'));
+          li.appendChild(buildSpyPlayerLabelEl(p, 'avatar-md'));
           orderList.appendChild(li);
         }
       });
     }
 
-    // Live Vote + Host Elimination List
+    // Laptop Host Verdict Selection (IRL Vote) / Phone Live Status
+    const voteHeading = document.getElementById('spy-vote-heading');
+    const voteInst = document.getElementById('spy-vote-instruction');
+    if (voteHeading) {
+      voteHeading.textContent = isHost
+        ? '⚖️ Phán quyết ngoài đời — Chọn người bị Vote'
+        : '📋 Danh sách người chơi trong ván';
+    }
+    if (voteInst) {
+      voteInst.textContent = isHost
+        ? 'Cả hội tranh luận và biểu quyết ngoài đời xong, đại diện bấm chọn người bị nghi là Gián Điệp bên dưới:'
+        : 'Tranh luận ngoài đời tự do! Khi thống nhất xong, chọn người bị vote trên màn hình Laptop Quản Trò.';
+    }
+
     const voteList = document.getElementById('spy-vote-list');
     voteList.innerHTML = '';
-    const groups = getVoteCounts();
-    const myVote = state.votes ? state.votes[session.clientId] : null;
-    const me = state.players.find((p) => p.id === session.clientId);
-    const canVote = state.phase === 'PLAYING' && me && me.alive;
 
     state.players.forEach((p) => {
       const li = document.createElement('li');
       li.className = `vote-row pop-in ${p.alive ? '' : 'eliminated'}`;
 
-      const voters = groups[p.id] || [];
       const info = document.createElement('div');
       info.appendChild(buildSpyPlayerLabelEl(p, 'avatar-md', p.id === session.clientId ? ' (Bạn)' : ''));
 
-      if (voters.length > 0) {
-        const voterWrap = document.createElement('div');
-        voterWrap.className = 'voter-avatars-mini';
-        const countSpan = document.createElement('span');
-        countSpan.className = 'pill pill-ready';
-        countSpan.textContent = `${voters.length} phiếu`;
-        voterWrap.appendChild(countSpan);
-
-        voters.forEach((v) => {
-          const pill = document.createElement('span');
-          pill.className = 'voter-pill-mini';
-          pill.appendChild(window.AppUI.createAvatarEl(v.avatarId, 'avatar-sm'));
-          const vName = document.createElement('span');
-          vName.textContent = v.name;
-          pill.appendChild(vName);
-          voterWrap.appendChild(pill);
-        });
-        info.appendChild(voterWrap);
-      }
-
       const actions = document.createElement('div');
       actions.style.display = 'flex';
-      actions.style.gap = '0.4rem';
+      actions.style.gap = '0.5rem';
+      actions.style.alignItems = 'center';
 
-      if (p.alive && canVote && p.id !== session.clientId) {
-        const voteBtn = document.createElement('button');
-        voteBtn.type = 'button';
-        voteBtn.className = `btn btn-sm ${myVote === p.id ? 'btn-primary' : 'btn-secondary'}`;
-        voteBtn.textContent = myVote === p.id ? '✓ Đã chọn' : 'Vote';
-        voteBtn.addEventListener('click', () => {
-          if (isHost) {
-            recordSpyVote(session.clientId, p.id);
-          } else {
-            session.send('SPY_VOTE', { targetId: p.id });
-          }
-        });
-        actions.appendChild(voteBtn);
-      }
-
-      if (isHost && p.alive && state.phase === 'PLAYING') {
+      if (!p.alive) {
+        const revPill = document.createElement('span');
+        revPill.className = 'pill pill-dead';
+        const r = p.revealedRole || p.role;
+        revPill.textContent =
+          r === 'spy' ? '🕵️ Gián Điệp' : r === 'mr_white' ? '🃏 Mr. White' : '🧑‍🌾 Dân Thường';
+        actions.appendChild(revPill);
+      } else if (isHost && state.phase === 'PLAYING') {
         const elimBtn = document.createElement('button');
         elimBtn.type = 'button';
-        elimBtn.className = 'btn btn-sm btn-danger-outline';
-        elimBtn.textContent = 'Loại';
+        elimBtn.className = 'btn btn-danger btn-sm';
+        elimBtn.textContent = '⚖️ Chọn loại (Đã vote)';
         elimBtn.addEventListener('click', async () => {
           const ok = await window.AppUI.confirmDialog(
-            'Xác nhận loại người chơi?',
-            `Loại ${p.name} khỏi ván chơi này?`
+            'Chốt kết quả vote ngoài đời?',
+            `Xác nhận cả hội đã vote loại ${p.name}?`
           );
           if (ok) eliminatePlayer(p.id);
         });
         actions.appendChild(elimBtn);
+      } else {
+        const alivePill = document.createElement('span');
+        alivePill.className = 'pill pill-alive';
+        alivePill.textContent = 'Còn sống';
+        actions.appendChild(alivePill);
       }
 
       li.append(info, actions);
@@ -1143,12 +1226,13 @@ window.SpyGame = (() => {
     });
 
     const aliveCount = state.players.filter((p) => p.alive).length;
-    const votedCount = Object.keys(state.votes || {}).length;
     document.getElementById('spy-vote-progress').textContent =
-      state.phase === 'PLAYING' ? `${votedCount}/${aliveCount} đã vote` : 'Đã kết thúc';
+      state.phase === 'PLAYING' ? `Vòng ${state.round} • ${aliveCount} người còn lại` : 'Đã kết thúc';
 
     document.getElementById('spy-host-controls').hidden = !(isHost && state.phase === 'PLAYING');
     document.getElementById('spy-mrwhite-banner').hidden = state.phase !== 'MR_WHITE_GUESS';
+    const hostMrWhiteForm = document.getElementById('spy-host-mrwhite-form');
+    if (hostMrWhiteForm) hostMrWhiteForm.hidden = !(isHost && state.phase === 'MR_WHITE_GUESS');
 
     const overBox = document.getElementById('spy-gameover-box');
     overBox.hidden = state.phase !== 'GAME_OVER';
