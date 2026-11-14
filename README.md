@@ -1,10 +1,15 @@
-# 🌙 Hội Quán Ma Sói & Gián Điệp (v2.4)
+# 🌙 Hội Quán Ma Sói & Gián Điệp (v2.5)
 
 Ứng dụng web chơi nhóm **5–10+ người** tại nhà — **tất cả mọi người đều là người chơi**, không ai phải đứng ngoài ra đề hay cầm trịch, không giới hạn thời gian tranh luận, **miễn phí 100%** khi đăng lên **GitHub Pages**.
 
 ---
 
-## ✨ Điểm mới ở phiên bản v2.4
+## ✨ Điểm mới ở phiên bản v2.5
+- **Khóa 100% Giọng đọc Tiếng Việt + Đổi nhanh Giọng Nữ / Giọng Nam:**
+  - Bổ sung `<meta name="referrer" content="no-referrer">` và lọc chặt chỉ dùng giọng `vi-VN`, loại bỏ triệt để lỗi rơi về giọng Tiếng Anh hệ điều hành (`Microsoft David`).
+  - Có nút chuyển đổi trực tiếp **👩 Giọng Nữ (VI) / 👨 Giọng Nam (VI)** ngay trên thanh đầu trang, trong sảnh chờ, trong khung Bot Quản Trò khi đang chơi và trong hộp thoại Cài đặt âm thanh — bấm là áp dụng & đọc thử ngay và tự lưu vào `localStorage`.
+
+## ✨ Điểm nổi bật từ v2.4
 - **11 Vai Trò Ma Sói (thêm 4 vai trò mới + tranh thẻ bài riêng):**
   - **Sói Đầu Đàn (`alpha_wolf`):** Thức dậy cùng bầy Sói, có **1 lần duy nhất** Nguyền hóa nạn nhân bị cắn thành Ma Sói thay vì giết.
   - **Thần Tình Yêu (`cupid`):** Đêm 1 ghép 2 người thành Cặp Đôi Tình Nhân (1 người chết, người kia chết theo; nếu khác phe trở thành Phe Thứ 3 Cặp Đôi).

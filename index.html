@@ -3,7 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hội Quán Ma Sói &amp; Gián Điệp (v2.4) — Party Game Offline</title>
+  <meta name="referrer" content="no-referrer">
+  <title>Hội Quán Ma Sói &amp; Gián Điệp (v2.5) — Party Game Offline</title>
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -12,11 +13,14 @@
       <div class="brand">
         <span class="brand-icon" aria-hidden="true">🌙</span>
         <div>
-          <p class="brand-title">Hội Quán Party Game <span class="version-badge">v2.4</span></p>
+          <p class="brand-title">Hội Quán Party Game <span class="version-badge">v2.5</span></p>
           <p class="brand-sub">Chơi nhóm 5–10+ người • Tất cả cùng chơi • Không giới hạn giờ</p>
         </div>
       </div>
       <div class="header-actions">
+        <button type="button" class="btn btn-ghost btn-sm js-toggle-voice-gender" aria-pressed="false" title="Đổi nhanh giọng đọc Tiếng Việt Nam/Nữ">
+          👩 Giọng Nữ (VI)
+        </button>
         <button type="button" id="btn-sound-settings" class="btn btn-ghost btn-sm" aria-label="Cài đặt âm thanh">
           <span aria-hidden="true">🔊</span> Giọng &amp; Âm thanh
         </button>
@@ -152,6 +156,12 @@
           <span id="ww-host-net-status" class="net-badge" role="status">Đang kết nối...</span>
         </div>
         <div class="room-topbar-actions">
+          <button type="button" class="btn btn-ghost btn-sm js-toggle-voice-gender" aria-pressed="false" title="Đổi nhanh giọng đọc Tiếng Việt Nam/Nữ">
+            👩 Giọng Nữ (VI)
+          </button>
+          <button type="button" id="ww-lobby-sound-btn" class="btn btn-ghost btn-sm" aria-label="Cài đặt giọng đọc và âm thanh">
+            <span aria-hidden="true">🔊</span> Âm thanh
+          </button>
           <button type="button" id="ww-host-copy-link" class="btn btn-secondary">
             <span aria-hidden="true">🔗</span> Copy link mời
           </button>
@@ -232,6 +242,9 @@
               <span class="bot-wave" aria-hidden="true">
                 <span></span><span></span><span></span><span></span><span></span>
               </span>
+              <button type="button" class="btn btn-ghost btn-sm js-toggle-voice-gender" aria-pressed="false" title="Đổi nhanh giọng đọc Tiếng Việt Nam/Nữ">
+                👩 Giọng Nữ (VI)
+              </button>
             </div>
             <p id="ww-host-bot-text" class="bot-speech-text">Bot Quản Trò đang chuẩn bị...</p>
           </div>
@@ -377,6 +390,12 @@
           <span id="spy-net-status" class="net-badge">Đang nối...</span>
         </div>
         <div class="room-topbar-actions">
+          <button type="button" class="btn btn-ghost btn-sm js-toggle-voice-gender" aria-pressed="false" title="Đổi nhanh giọng đọc Tiếng Việt Nam/Nữ">
+            👩 Giọng Nữ (VI)
+          </button>
+          <button type="button" id="spy-lobby-sound-btn" class="btn btn-ghost btn-sm" aria-label="Cài đặt giọng đọc và âm thanh">
+            <span aria-hidden="true">🔊</span> Âm thanh
+          </button>
           <button type="button" id="spy-copy-link" class="btn btn-secondary">
             <span aria-hidden="true">🔗</span> Copy link mời
           </button>
@@ -517,6 +536,9 @@
               <span class="bot-wave" aria-hidden="true">
                 <span></span><span></span><span></span><span></span><span></span>
               </span>
+              <button type="button" class="btn btn-ghost btn-sm js-toggle-voice-gender" aria-pressed="false" title="Đổi nhanh giọng đọc Tiếng Việt Nam/Nữ">
+                👩 Giọng Nữ (VI)
+              </button>
             </div>
             <p id="spy-bot-text" class="bot-speech-text">Bot đang chuẩn bị ván chơi...</p>
           </div>
@@ -634,7 +656,7 @@
   </main>
 
   <footer class="app-footer">
-    <p>Hội Quán Ma Sói &amp; Gián Điệp • Phiên bản <strong>v2.4</strong> • Chạy trực tiếp trên GitHub Pages</p>
+    <p>Hội Quán Ma Sói &amp; Gián Điệp • Phiên bản <strong>v2.5</strong> • Chạy trực tiếp trên GitHub Pages</p>
   </footer>
 
   <!-- ==================== MODALS (<dialog>) ==================== -->
@@ -666,10 +688,21 @@
 
   <dialog id="dialog-sound" closedby="any" aria-labelledby="dialog-sound-title">
     <div class="dialog-header">
-      <h2 id="dialog-sound-title">🔊 Cài đặt giọng đọc &amp; Âm thanh</h2>
+      <h2 id="dialog-sound-title">🔊 Cài đặt giọng đọc (Chỉ Tiếng Việt) &amp; Âm thanh</h2>
       <button type="button" id="btn-close-sound" class="btn btn-ghost btn-sm" aria-label="Đóng">✕</button>
     </div>
     <div class="dialog-body-stack">
+      <div class="field">
+        <span class="field-label-text">Giới tính giọng đọc Quản Trò (Chỉ Tiếng Việt)</span>
+        <div class="gender-choice-grid">
+          <button type="button" id="btn-voice-female" class="btn gender-choice-btn active" data-gender="female" aria-pressed="true">
+            👩 Giọng Nữ (Tiếng Việt)
+          </button>
+          <button type="button" id="btn-voice-male" class="btn gender-choice-btn" data-gender="male" aria-pressed="false">
+            👨 Giọng Nam (Tiếng Việt)
+          </button>
+        </div>
+      </div>
       <div class="config-checkbox-row">
         <input type="checkbox" id="sound-voice-enable" checked>
         <label for="sound-voice-enable">Bật giọng đọc Tiếng Việt (Bot Quản Trò)</label>
@@ -679,16 +712,16 @@
         <label for="sound-sfx-enable">Bật hiệu ứng âm thanh (Bình minh, bình thuốc, súng...)</label>
       </div>
       <div class="field">
-        <label for="sound-tts-mode">Nguồn giọng đọc Tiếng Việt</label>
+        <label for="sound-tts-mode">Nguồn giọng đọc Tiếng Việt (Khóa chặt vi-VN)</label>
         <select id="sound-tts-mode">
-          <option value="auto_neural" selected>🌟 Tự động (Ưu tiên Giọng AI Neural Edge / Cloud)</option>
-          <option value="cloud">☁️ Giọng Google Cloud Tiếng Việt</option>
-          <option value="browser">💻 Giọng Trình Duyệt (Web Speech Offline)</option>
+          <option value="auto_neural" selected>🌟 Tự động (Ưu tiên AI Tiếng Việt / Cloud vi-VN)</option>
+          <option value="cloud">☁️ Giọng Google Cloud Tiếng Việt (Ổn định mọi trình duyệt)</option>
+          <option value="browser">💻 Giọng Tiếng Việt của trình duyệt (vi-VN)</option>
         </select>
-        <span class="hint">Mẹo: Mở Laptop Host bằng <strong>Microsoft Edge</strong> để dùng giọng AI <em>Hoài My / Nam Minh Natural</em> tự nhiên nhất!</span>
+        <span class="hint">Ứng dụng luôn khóa 100% Tiếng Việt (loại bỏ hoàn toàn giọng Tiếng Anh hệ thống) và đổi ngay khi bấm chọn Nam/Nữ.</span>
       </div>
       <div id="sound-browser-voice-wrap" class="field" hidden>
-        <label for="sound-voice-select">Giọng đọc trình duyệt</label>
+        <label for="sound-voice-select">Giọng Tiếng Việt cài sẵn trên máy</label>
         <select id="sound-voice-select"></select>
       </div>
       <div class="field">
@@ -710,7 +743,7 @@
 
   <dialog id="dialog-rules" closedby="any" aria-labelledby="dialog-rules-title">
     <div class="dialog-header">
-      <h2 id="dialog-rules-title">📖 Luật chơi nhanh (v2.4)</h2>
+      <h2 id="dialog-rules-title">📖 Luật chơi nhanh (v2.5)</h2>
       <button type="button" id="btn-close-rules" class="btn btn-ghost btn-sm" aria-label="Đóng">✕</button>
     </div>
     <div class="dialog-body-stack rules-content">

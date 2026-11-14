@@ -1,6 +1,6 @@
-// Dữ liệu v2.4: 8 Avatar ảnh hội bạn + 24 Icon, 11 Role Ma Sói (Phe Thứ 3 Thằng Ngố & Sát Nhân, Thần Tình Yêu, Già Làng, Sói Đầu Đàn), Gián Điệp
+// Dữ liệu v2.5: Khóa 100% Tiếng Việt + Chuyển đổi Giọng Nam/Nữ, 11 Role Ma Sói, 8 Avatar ảnh hội bạn + 24 Icon, Gián Điệp
 window.GameData = (() => {
-  const APP_VERSION = 'v2.4';
+  const APP_VERSION = 'v2.5';
 
   const PLAYER_AVATARS = [
     { id: 'friend_1', img: 'assets/avatars/friend_1.jpg', emoji: '🦇', label: 'Thành viên 1', bg: 'linear-gradient(135deg,#ec4899,#8b5cf6)' },

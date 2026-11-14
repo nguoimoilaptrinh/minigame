@@ -1,12 +1,53 @@
-// Bộ máy âm thanh v2.3: Giọng đọc AI Neural (HoaiMy/NamMinh Natural) + Google Cloud TTS & Âm thanh Phù Thủy tách biệt
+// Bộ máy âm thanh v2.5: Khóa 100% Tiếng Việt (loại bỏ triệt để giọng Tiếng Anh) + Đổi nhanh Giọng Nữ / Giọng Nam
 window.AudioEngine = (() => {
+  const STORAGE_KEYS = {
+    voice: 'hq_voice_enable',
+    sfx: 'hq_sfx_enable',
+    rate: 'hq_voice_rate',
+    pitch: 'hq_voice_pitch',
+    mode: 'hq_tts_mode',
+    gender: 'hq_voice_gender',
+    voiceURI: 'hq_voice_uri'
+  };
+
+  function readStorage(key, fallback) {
+    try {
+      if (typeof localStorage === 'undefined') return fallback;
+      const val = localStorage.getItem(key);
+      return val === null ? fallback : val;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function writeStorage(key, value) {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.setItem(key, String(value));
+    } catch (_) {}
+  }
+
+  function clampNumber(val, min, max, fallback) {
+    const num = Number(val);
+    if (!Number.isFinite(num)) return fallback;
+    return Math.min(max, Math.max(min, num));
+  }
+
+  function dispatchEventSafe(name, detail) {
+    if (typeof document !== 'undefined' && typeof CustomEvent !== 'undefined') {
+      document.dispatchEvent(new CustomEvent(name, { detail }));
+    }
+  }
+
   let ctx = null;
-  let voiceEnabled = true;
-  let sfxEnabled = true;
-  let speechRate = 1.02;
-  let speechPitch = 1.0;
-  let ttsMode = 'auto_neural'; // 'auto_neural' | 'cloud' | 'browser'
-  let selectedVoiceURI = '';
+  let voiceEnabled = readStorage(STORAGE_KEYS.voice, 'true') !== 'false';
+  let sfxEnabled = readStorage(STORAGE_KEYS.sfx, 'true') !== 'false';
+  let speechRate = clampNumber(readStorage(STORAGE_KEYS.rate, '1.02'), 0.7, 1.5, 1.02);
+  let speechPitch = clampNumber(readStorage(STORAGE_KEYS.pitch, '1.0'), 0.7, 1.3, 1.0);
+  const savedMode = readStorage(STORAGE_KEYS.mode, 'auto_neural');
+  let ttsMode = savedMode === 'cloud' || savedMode === 'browser' ? savedMode : 'auto_neural';
+  let voiceGender = readStorage(STORAGE_KEYS.gender, 'female') === 'male' ? 'male' : 'female';
+  let selectedVoiceURI = readStorage(STORAGE_KEYS.voiceURI, '') || '';
   let voices = [];
   let currentSpeakToken = 0;
   let currentAudioEl = null;
@@ -15,7 +56,11 @@ window.AudioEngine = (() => {
   function emitSpeakState(speaking) {
     if (isSpeakingState === speaking) return;
     isSpeakingState = speaking;
-    document.dispatchEvent(new CustomEvent('audio-speak-state', { detail: { speaking } }));
+    dispatchEventSafe('audio-speak-state', { speaking });
+  }
+
+  function emitConfigChanged() {
+    dispatchEventSafe('audio-config-changed', getConfig());
   }
 
   function ensureContext() {
@@ -36,31 +81,89 @@ window.AudioEngine = (() => {
     }
   }
 
-  function findBestNeuralVietnameseVoice(list) {
-    const viList = (list || []).filter((v) => v.lang && v.lang.toLowerCase().startsWith('vi'));
-    if (!viList.length) return null;
+  // Lọc nghiêm ngặt: CHỈ nhận giọng Tiếng Việt (tuyệt đối không nhận Microsoft David/Zira hay en-*)
+  function isVietnameseVoice(v) {
+    if (!v) return false;
+    const lang = String(v.lang || '').trim().toLowerCase();
+    const name = String(v.name || '').trim().toLowerCase();
     return (
-      viList.find((v) => /hoaimy.*natural|namminh.*natural/i.test(v.name)) ||
-      viList.find((v) => /natural|neural/i.test(v.name)) ||
-      viList.find((v) => /online/i.test(v.name)) ||
-      null
+      lang === 'vi' ||
+      lang.startsWith('vi-') ||
+      lang.startsWith('vi_') ||
+      name.includes('vietnam') ||
+      name.includes('tiếng việt') ||
+      name.includes('tieng viet') ||
+      name.includes('hoaimy') ||
+      name.includes('namminh')
     );
   }
 
-  function loadVoices() {
-    if (!('speechSynthesis' in window)) return [];
-    const list = window.speechSynthesis.getVoices() || [];
-    if (list.length > 0) {
-      voices = list;
-      if (!selectedVoiceURI) {
-        const viVoice =
-          findBestNeuralVietnameseVoice(list) ||
-          list.find((v) => v.lang.toLowerCase().startsWith('vi') && v.name.toLowerCase().includes('google')) ||
-          list.find((v) => v.lang.toLowerCase().startsWith('vi')) ||
-          list[0];
-        if (viVoice) selectedVoiceURI = viVoice.voiceURI;
-      }
+  function detectVietnameseVoiceGender(voice) {
+    if (!voice) return 'female';
+    const text = `${voice.name || ''} ${voice.voiceURI || ''}`.toLowerCase();
+    if (
+      /namminh|nam minh|microsoft an\b|\ban\s*-?\s*vietnam|vi-vn-x-vid|vi-vn-x-vic|(?:standard|wavenet|neural2)-[bd]\b|\bmale\b|\bgiọng nam\b/.test(
+        text
+      )
+    ) {
+      return 'male';
     }
+    return 'female';
+  }
+
+  function getVoiceQualityScore(v) {
+    const name = String(v?.name || '').toLowerCase();
+    if (/hoaimy.*natural|namminh.*natural/.test(name)) return 5;
+    if (/natural|neural/.test(name)) return 4;
+    if (/online/.test(name)) return 3;
+    if (/google/.test(name)) return 2;
+    return 1;
+  }
+
+  function findVietnameseVoiceByGender(list, gender) {
+    const viList = (list || []).filter(isVietnameseVoice);
+    if (!viList.length) return null;
+    const matched = viList
+      .filter((v) => detectVietnameseVoiceGender(v) === gender)
+      .sort((a, b) => getVoiceQualityScore(b) - getVoiceQualityScore(a));
+    return matched[0] || null;
+  }
+
+  function findAutoWebSpeechVoice(list, gender) {
+    const candidate = findVietnameseVoiceByGender(list, gender);
+    if (!candidate) return null;
+    const score = getVoiceQualityScore(candidate);
+    if (score >= 3 || (gender === 'male' && detectVietnameseVoiceGender(candidate) === 'male')) {
+      return candidate;
+    }
+    return null;
+  }
+
+  function loadVoices() {
+    if (!('speechSynthesis' in window)) {
+      voices = [];
+      selectedVoiceURI = '';
+      return voices;
+    }
+    const rawList = window.speechSynthesis.getVoices() || [];
+    const viList = rawList.filter(isVietnameseVoice);
+    voices = viList;
+
+    // Xóa sạch nếu URI đang lưu không phải giọng Tiếng Việt hợp lệ (tránh kẹt Microsoft David/en-US)
+    const savedStillValid = selectedVoiceURI && viList.some((v) => v.voiceURI === selectedVoiceURI);
+    if (!savedStillValid) {
+      selectedVoiceURI = '';
+    }
+
+    if (!selectedVoiceURI && viList.length > 0) {
+      const preferred = findVietnameseVoiceByGender(viList, voiceGender) || viList[0];
+      selectedVoiceURI = preferred ? preferred.voiceURI : '';
+    }
+
+    if (!viList.length) {
+      selectedVoiceURI = '';
+    }
+    writeStorage(STORAGE_KEYS.voiceURI, selectedVoiceURI);
     return voices;
   }
 
@@ -68,25 +171,74 @@ window.AudioEngine = (() => {
     loadVoices();
     window.speechSynthesis.addEventListener('voiceschanged', () => {
       loadVoices();
-      document.dispatchEvent(new CustomEvent('audio-voices-updated'));
+      dispatchEventSafe('audio-voices-updated');
     });
   }
 
+  // Luôn chỉ trả về các giọng Tiếng Việt đã lọc
   function getVoices() {
-    if (!voices.length) loadVoices();
-    return voices;
+    return loadVoices();
   }
 
-  function setConfig({ voice, sfx, rate, pitch, voiceURI, mode }) {
-    if (typeof voice === 'boolean') voiceEnabled = voice;
-    if (typeof sfx === 'boolean') sfxEnabled = sfx;
-    if (typeof rate === 'number') speechRate = Math.min(1.5, Math.max(0.7, rate));
-    if (typeof pitch === 'number') speechPitch = Math.min(1.2, Math.max(0.8, pitch));
-    if (typeof voiceURI === 'string') selectedVoiceURI = voiceURI;
-    if (mode === 'auto_neural' || mode === 'cloud' || mode === 'browser') ttsMode = mode;
+  function setVoiceGender(gender) {
+    const nextGender = gender === 'male' ? 'male' : 'female';
+    voiceGender = nextGender;
+    writeStorage(STORAGE_KEYS.gender, nextGender);
+
+    const viList = getVoices();
+    const matched = findVietnameseVoiceByGender(viList, nextGender);
+    selectedVoiceURI = matched ? matched.voiceURI : '';
+    writeStorage(STORAGE_KEYS.voiceURI, selectedVoiceURI);
+
+    emitConfigChanged();
+    dispatchEventSafe('audio-voices-updated');
+    return getConfig();
+  }
+
+  function toggleVoiceGender() {
+    return setVoiceGender(voiceGender === 'male' ? 'female' : 'male');
+  }
+
+  function setConfig({ voice, sfx, rate, pitch, voiceURI, mode, gender }) {
+    if (typeof voice === 'boolean') {
+      voiceEnabled = voice;
+      writeStorage(STORAGE_KEYS.voice, voiceEnabled);
+    }
+    if (typeof sfx === 'boolean') {
+      sfxEnabled = sfx;
+      writeStorage(STORAGE_KEYS.sfx, sfxEnabled);
+    }
+    if (typeof rate === 'number') {
+      speechRate = clampNumber(rate, 0.7, 1.5, speechRate);
+      writeStorage(STORAGE_KEYS.rate, speechRate);
+    }
+    if (typeof pitch === 'number') {
+      speechPitch = clampNumber(pitch, 0.7, 1.3, speechPitch);
+      writeStorage(STORAGE_KEYS.pitch, speechPitch);
+    }
+    if (mode === 'auto_neural' || mode === 'cloud' || mode === 'browser') {
+      ttsMode = mode;
+      writeStorage(STORAGE_KEYS.mode, ttsMode);
+    }
+    if (gender === 'female' || gender === 'male') {
+      voiceGender = gender;
+      writeStorage(STORAGE_KEYS.gender, voiceGender);
+    }
+    if (typeof voiceURI === 'string') {
+      if (!voiceURI) {
+        selectedVoiceURI = '';
+      } else {
+        const viList = getVoices();
+        const valid = viList.find((v) => v.voiceURI === voiceURI);
+        selectedVoiceURI = valid ? valid.voiceURI : '';
+      }
+      writeStorage(STORAGE_KEYS.voiceURI, selectedVoiceURI);
+    }
+    emitConfigChanged();
   }
 
   function getConfig() {
+    const viList = getVoices();
     return {
       voice: voiceEnabled,
       sfx: sfxEnabled,
@@ -94,7 +246,9 @@ window.AudioEngine = (() => {
       pitch: speechPitch,
       voiceURI: selectedVoiceURI,
       mode: ttsMode,
-      hasNeuralVoice: Boolean(findBestNeuralVietnameseVoice(getVoices()))
+      gender: voiceGender,
+      hasVietnameseVoice: viList.length > 0,
+      hasNeuralVoice: Boolean(findAutoWebSpeechVoice(viList, voiceGender))
     };
   }
 
@@ -150,9 +304,24 @@ window.AudioEngine = (() => {
     return chunks;
   }
 
-  function speakWithWebSpeech(text, token, onDone) {
+  function speakWithWebSpeech(text, token, onDone, skipCloudFallback = false) {
     if (token !== currentSpeakToken) return;
-    if (!('speechSynthesis' in window)) {
+    const available = getVoices();
+    const chosen =
+      available.find((v) => v.voiceURI === selectedVoiceURI && isVietnameseVoice(v)) ||
+      findVietnameseVoiceByGender(available, voiceGender) ||
+      available.find(isVietnameseVoice) ||
+      null;
+
+    // CHỐT AN TOÀN: Nếu không có giọng Tiếng Việt thực thụ, TUYỆT ĐỐI KHÔNG gọi speechSynthesis (tránh đọc giọng Anh)
+    if (!('speechSynthesis' in window) || !chosen || !isVietnameseVoice(chosen)) {
+      if (!skipCloudFallback) {
+        const chunks = splitIntoChunks(text, 150);
+        if (chunks.length > 0) {
+          playCloudChunks(chunks, 0, token, onDone, 0);
+          return;
+        }
+      }
       const readDelay = Math.min(2800, Math.max(1000, text.length * 42));
       setTimeout(() => {
         if (token === currentSpeakToken) onDone();
@@ -165,19 +334,21 @@ window.AudioEngine = (() => {
     } catch (_) {}
 
     const utter = new SpeechSynthesisUtterance(text);
-    utter.lang = 'vi-VN';
-    utter.rate = speechRate;
-    utter.pitch = speechPitch;
+    utter.voice = chosen;
+    utter.lang = chosen.lang || 'vi-VN';
 
-    const available = getVoices();
-    const chosen =
-      available.find((v) => v.voiceURI === selectedVoiceURI) ||
-      findBestNeuralVietnameseVoice(available) ||
-      available.find((v) => v.lang.toLowerCase().startsWith('vi'));
-    if (chosen) {
-      utter.voice = chosen;
-      utter.lang = chosen.lang;
+    // Nếu máy chỉ có 1 giọng Việt (ví dụ chỉ có giọng Nữ mà chọn Nam), điều chỉnh pitch trầm xuống
+    const nativeGender = detectVietnameseVoiceGender(chosen);
+    let finalPitch = speechPitch;
+    let finalRate = speechRate;
+    if (voiceGender === 'male' && nativeGender !== 'male') {
+      finalPitch = clampNumber(0.68 * speechPitch, 0.5, 1.0, 0.68);
+      finalRate = clampNumber(0.95 * speechRate, 0.7, 1.35, 0.95);
+    } else if (voiceGender === 'female' && nativeGender === 'male') {
+      finalPitch = clampNumber(1.32 * speechPitch, 1.05, 1.5, 1.32);
     }
+    utter.pitch = finalPitch;
+    utter.rate = finalRate;
 
     let finished = false;
     const safeFinish = () => {
@@ -200,7 +371,26 @@ window.AudioEngine = (() => {
     }
   }
 
-  function playCloudChunks(chunks, index, token, onDone) {
+  function applyCloudVoiceProfile(audio) {
+    const isMale = voiceGender === 'male';
+    const preserve = !isMale;
+    if ('preservesPitch' in audio) audio.preservesPitch = preserve;
+    if ('mozPreservesPitch' in audio) audio.mozPreservesPitch = preserve;
+    if ('webkitPreservesPitch' in audio) audio.webkitPreservesPitch = preserve;
+    audio.playbackRate = isMale
+      ? clampNumber(0.83 * speechRate, 0.74, 0.92, 0.83)
+      : clampNumber(speechRate, 0.75, 1.4, 1.02);
+  }
+
+  function buildCloudUrls(chunk) {
+    const q = encodeURIComponent(chunk);
+    return [
+      `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=vi&q=${q}`,
+      `https://translate.google.com/translate_tts?ie=UTF-8&tl=vi&client=tw-ob&q=${q}`
+    ];
+  }
+
+  function playCloudChunks(chunks, index, token, onDone, mirrorIndex = 0) {
     if (token !== currentSpeakToken) return;
     if (index >= chunks.length) {
       onDone();
@@ -208,19 +398,37 @@ window.AudioEngine = (() => {
     }
 
     const chunk = chunks[index];
-    const ttsUrl = `https://translate.googleapis.com/translate_tts?client=gtx&ie=UTF-8&tl=vi&q=${encodeURIComponent(chunk)}`;
+    const urls = buildCloudUrls(chunk);
+    const ttsUrl = urls[mirrorIndex] || urls[0];
     const audio = new Audio(ttsUrl);
-    audio.referrerPolicy = 'no-referrer';
-    audio.playbackRate = speechRate;
+    if ('referrerPolicy' in audio) {
+      audio.referrerPolicy = 'no-referrer';
+    }
+    applyCloudVoiceProfile(audio);
+    if (typeof audio.addEventListener === 'function') {
+      audio.addEventListener('loadedmetadata', () => applyCloudVoiceProfile(audio), { once: true });
+    }
     currentAudioEl = audio;
 
     let handled = false;
-    const guardMs = Math.max(4500, Math.min(12000, chunk.length * 120));
+    const guardMs = Math.max(4500, Math.min(12000, chunk.length * 130));
     const guardTimer = setTimeout(() => {
       if (handled || token !== currentSpeakToken) return;
       handled = true;
-      playCloudChunks(chunks, index + 1, token, onDone);
+      playCloudChunks(chunks, index + 1, token, onDone, 0);
     }, guardMs);
+
+    const handleFailure = () => {
+      if (handled || token !== currentSpeakToken) return;
+      handled = true;
+      clearTimeout(guardTimer);
+      currentAudioEl = null;
+      if (mirrorIndex + 1 < urls.length) {
+        playCloudChunks(chunks, index, token, onDone, mirrorIndex + 1);
+      } else {
+        speakWithWebSpeech(chunks.slice(index).join(' '), token, onDone, true);
+      }
+    };
 
     audio.onended = () => {
       if (handled || token !== currentSpeakToken) return;
@@ -228,28 +436,22 @@ window.AudioEngine = (() => {
       clearTimeout(guardTimer);
       currentAudioEl = null;
       // Nhịp nghỉ kể chuyện tự nhiên giữa các câu
-      setTimeout(() => playCloudChunks(chunks, index + 1, token, onDone), 180);
+      setTimeout(() => playCloudChunks(chunks, index + 1, token, onDone, 0), 180);
     };
 
-    audio.onerror = () => {
-      if (handled || token !== currentSpeakToken) return;
-      handled = true;
-      clearTimeout(guardTimer);
-      currentAudioEl = null;
-      // Tự động fallback sang Web Speech cho phần còn lại
-      speakWithWebSpeech(chunks.slice(index).join(' '), token, onDone);
-    };
+    audio.onerror = handleFailure;
 
-    audio.play().catch(() => {
-      if (handled || token !== currentSpeakToken) return;
-      handled = true;
-      clearTimeout(guardTimer);
-      currentAudioEl = null;
-      speakWithWebSpeech(chunks.slice(index).join(' '), token, onDone);
-    });
+    try {
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(handleFailure);
+      }
+    } catch (_) {
+      handleFailure();
+    }
   }
 
-  // Phát giọng nói Tiếng Việt (ưu tiên Cloud AI tự nhiên, tự fallback sang Web Speech)
+  // Phát giọng nói 100% Tiếng Việt (hỗ trợ Giọng Nữ / Giọng Nam)
   function speak(text, onEnd) {
     stopSpeech();
     const token = currentSpeakToken;
@@ -267,23 +469,29 @@ window.AudioEngine = (() => {
 
     emitSpeakState(true);
     const availableVoices = getVoices();
-    const neuralVoice = findBestNeuralVietnameseVoice(availableVoices);
 
-    // Chế độ auto_neural: ưu tiên Microsoft HoaiMy/NamMinh Natural (Edge AI Neural), nếu không có thì dùng Cloud AI
-    if (ttsMode === 'auto_neural' && neuralVoice) {
-      speakWithWebSpeech(text, token, done);
-      return;
-    }
-
-    if (ttsMode === 'cloud' || ttsMode === 'auto_neural') {
+    if (ttsMode === 'auto_neural') {
+      const autoViVoice = findAutoWebSpeechVoice(availableVoices, voiceGender);
+      if (autoViVoice) {
+        speakWithWebSpeech(text, token, done, false);
+        return;
+      }
       const chunks = splitIntoChunks(text, 150);
       if (chunks.length > 0) {
-        playCloudChunks(chunks, 0, token, done);
+        playCloudChunks(chunks, 0, token, done, 0);
         return;
       }
     }
 
-    speakWithWebSpeech(text, token, done);
+    if (ttsMode === 'cloud') {
+      const chunks = splitIntoChunks(text, 150);
+      if (chunks.length > 0) {
+        playCloudChunks(chunks, 0, token, done, 0);
+        return;
+      }
+    }
+
+    speakWithWebSpeech(text, token, done, false);
   }
 
   // ==================== HIỆU ỨNG ÂM THANH TỔNG HỢP (WEB AUDIO API) ====================
@@ -447,6 +655,8 @@ window.AudioEngine = (() => {
     getVoices,
     setConfig,
     getConfig,
+    setVoiceGender,
+    toggleVoiceGender,
     speak,
     stopSpeech,
     playWolfHowl,

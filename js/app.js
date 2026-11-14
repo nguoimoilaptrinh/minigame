@@ -305,6 +305,41 @@ window.AppUI = (() => {
     const rateVal = document.getElementById('sound-rate-val');
     const pitchRange = document.getElementById('sound-pitch-range');
     const pitchVal = document.getElementById('sound-pitch-val');
+    const femaleBtn = document.getElementById('btn-voice-female');
+    const maleBtn = document.getElementById('btn-voice-male');
+    const quickGenderBtns = document.querySelectorAll('.js-toggle-voice-gender');
+
+    function syncGenderButtons(gender) {
+      const isMale = gender === 'male';
+      if (femaleBtn) {
+        femaleBtn.classList.toggle('active', !isMale);
+        femaleBtn.setAttribute('aria-pressed', !isMale ? 'true' : 'false');
+      }
+      if (maleBtn) {
+        maleBtn.classList.toggle('active', isMale);
+        maleBtn.setAttribute('aria-pressed', isMale ? 'true' : 'false');
+      }
+      quickGenderBtns.forEach((btn) => {
+        btn.setAttribute('aria-pressed', isMale ? 'true' : 'false');
+        btn.classList.toggle('is-male', isMale);
+        btn.textContent = isMale ? '👨 Giọng Nam (VI)' : '👩 Giọng Nữ (VI)';
+      });
+    }
+
+    function syncSoundUiFromEngine() {
+      const cfg = window.AudioEngine.getConfig();
+      voiceChk.checked = cfg.voice;
+      sfxChk.checked = cfg.sfx;
+      ttsModeSel.value = cfg.mode;
+      rateRange.value = String(cfg.rate);
+      rateVal.textContent = `${cfg.rate.toFixed(2).replace(/\.00$/, '.0')}x`;
+      if (pitchRange) {
+        pitchRange.value = String(cfg.pitch);
+        if (pitchVal) pitchVal.textContent = cfg.pitch.toFixed(2).replace(/\.00$/, '.0');
+      }
+      browserVoiceWrap.hidden = ttsModeSel.value === 'cloud';
+      syncGenderButtons(cfg.gender);
+    }
 
     function populateVoices() {
       const list = window.AudioEngine.getVoices();
@@ -313,26 +348,21 @@ window.AppUI = (() => {
       if (list.length === 0) {
         const opt = document.createElement('option');
         opt.value = '';
-        opt.textContent = 'Mặc định trình duyệt (vi-VN)';
+        opt.textContent = '☁️ Giọng Tiếng Việt Cloud tự động (vi-VN)';
         voiceSel.appendChild(opt);
         return;
       }
-      // Ưu tiên đưa giọng Việt lên đầu
-      const sorted = [...list].sort((a, b) => {
-        const aVi = a.lang.toLowerCase().startsWith('vi') ? 0 : 1;
-        const bVi = b.lang.toLowerCase().startsWith('vi') ? 0 : 1;
-        return aVi - bVi;
-      });
-      sorted.forEach((v) => {
+      list.forEach((v) => {
         const opt = document.createElement('option');
         opt.value = v.voiceURI;
-        opt.textContent = `${v.name} (${v.lang})`;
+        opt.textContent = `${v.name} (${v.lang || 'vi-VN'})`;
         if (v.voiceURI === cfg.voiceURI) opt.selected = true;
         voiceSel.appendChild(opt);
       });
     }
 
     document.addEventListener('audio-voices-updated', populateVoices);
+    document.addEventListener('audio-config-changed', syncSoundUiFromEngine);
     document.addEventListener('audio-speak-state', (e) => {
       const speaking = Boolean(e.detail?.speaking);
       const wwBotBox = document.getElementById('ww-bot-announcer');
@@ -343,12 +373,46 @@ window.AppUI = (() => {
 
     openSoundModalFn = () => {
       window.AudioEngine.unlock();
+      syncSoundUiFromEngine();
       populateVoices();
-      browserVoiceWrap.hidden = ttsModeSel.value === 'cloud';
       soundDialog.showModal();
     };
 
     document.getElementById('btn-sound-settings').addEventListener('click', openSoundModalFn);
+    const wwLobbySoundBtn = document.getElementById('ww-lobby-sound-btn');
+    if (wwLobbySoundBtn) wwLobbySoundBtn.addEventListener('click', openSoundModalFn);
+    const spyLobbySoundBtn = document.getElementById('spy-lobby-sound-btn');
+    if (spyLobbySoundBtn) spyLobbySoundBtn.addEventListener('click', openSoundModalFn);
+
+    [femaleBtn, maleBtn].filter(Boolean).forEach((btn) => {
+      btn.addEventListener('click', () => {
+        window.AudioEngine.unlock();
+        const nextGender = btn.dataset.gender === 'male' ? 'male' : 'female';
+        window.AudioEngine.setVoiceGender(nextGender);
+        syncSoundUiFromEngine();
+        populateVoices();
+        window.AudioEngine.speak(
+          nextGender === 'male'
+            ? 'Đã chuyển sang giọng Nam Quản Trò tiếng Việt.'
+            : 'Đã chuyển sang giọng Nữ Quản Trò tiếng Việt.'
+        );
+      });
+    });
+
+    quickGenderBtns.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        window.AudioEngine.unlock();
+        const cfg = window.AudioEngine.toggleVoiceGender();
+        syncSoundUiFromEngine();
+        populateVoices();
+        const msg =
+          cfg.gender === 'male'
+            ? 'Đã chuyển sang giọng Nam Quản Trò tiếng Việt.'
+            : 'Đã chuyển sang giọng Nữ Quản Trò tiếng Việt.';
+        showToast(msg);
+        window.AudioEngine.speak(msg);
+      });
+    });
 
     document.getElementById('btn-close-sound').addEventListener('click', () => {
       soundDialog.returnValue = '';
@@ -377,6 +441,9 @@ window.AppUI = (() => {
     voiceSel.addEventListener('change', syncAudioCfg);
     rateRange.addEventListener('input', syncAudioCfg);
     if (pitchRange) pitchRange.addEventListener('input', syncAudioCfg);
+
+    syncSoundUiFromEngine();
+    populateVoices();
 
     document.getElementById('btn-test-sfx').addEventListener('click', () => {
       window.AudioEngine.unlock();
