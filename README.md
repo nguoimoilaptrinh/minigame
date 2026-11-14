@@ -1,8 +1,14 @@
-# 🌙 Hội Quán Ma Sói & Gián Điệp (v2.5)
+# 🌙 Hội Quán Ma Sói & Gián Điệp (v2.6)
 
 Ứng dụng web chơi nhóm **5–10+ người** tại nhà — **tất cả mọi người đều là người chơi**, không ai phải đứng ngoài ra đề hay cầm trịch, không giới hạn thời gian tranh luận, **miễn phí 100%** khi đăng lên **GitHub Pages**.
 
 ---
+
+## ✨ Điểm mới ở phiên bản v2.6
+- **Làm mới toàn bộ kho nội dung Game Gián Điệp (ngắn gọn, gần gũi, dễ hiểu):**
+  - Toàn bộ **125 cặp từ khóa Ai Là Gián Điệp** được tinh gọn về dạng **1–3 từ** quen thuộc đời thường (bỏ các cụm câu dài dòng), chia thành 5 bộ: *Tình Yêu & Hội Bạn*, *Ẩm Thực & Ăn Nhậu*, *Giải Trí & Công Nghệ*, *Tính Cách & Thói Quen Lầy Lội*, *Đồ Vật & Đời Sống*.
+  - Rút gọn bộ câu hỏi **Điệp Viên Hỏi Xoáy** ngắn gọn, đọc lướt 2 giây hiểu ngay.
+  - Thay thế các địa điểm xa lạ trong **Spyfall** (*Tàu vũ trụ*, *Tàu ngầm*) bằng địa điểm quen thuộc với hội bạn Việt Nam (*Quán nhậu vỉa hè*, *Tiệm Net / Quán Game*).
 
 ## ✨ Điểm mới ở phiên bản v2.5
 - **Khóa 100% Giọng đọc Tiếng Việt + Đổi nhanh Giọng Nữ / Giọng Nam:**
